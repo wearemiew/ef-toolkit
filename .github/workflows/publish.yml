@@ -46,7 +46,7 @@ jobs:
     # https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository
     # You can update this logic if you want to manage releases differently
     if: github.event_name == 'release'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       # Download the NuGet package created in the previous job
       - uses: actions/download-artifact@v3

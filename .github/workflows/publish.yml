@@ -31,13 +31,9 @@ jobs:
     # Install the .NET SDK indicated in the global.json file
     - name: Pack NuGet package
       uses: actions/setup-dotnet@v3
-
-    - name: Get Version
-      id: version
-      uses: battila7/get-version-action@v2
     
     # Create the NuGet package in the folder from the environment variable NuGetDirectory
-    - run: dotnet pack ${{ env.PROJECT_PATH }} --configuration Release -p:PackageVersion=$({steps.version.output.version-without-v}) --output ${{env.NUGGETDIRECTORY}}
+    - run: dotnet pack ${{ env.PROJECT_PATH }} --configuration Release -p:PackageVersion=${{ github.ref }} --output ${{env.NUGGETDIRECTORY}}
 
     - name: Publish NuGet package
       run: dotnet nuget push ${{env.NUGGETDIRECTORY}}/*.nupkg -k ${GITHUB_TOKEN} -s ${{env.NUGGET_SOURCE}}  --no-symbols 

@@ -44,4 +44,6 @@ jobs:
       uses: actions/setup-dotnet@v3
 
     - name: Publish NuGet package
-      run: dotnet nuget push ./ef-toolkit/out/*.nupkg --api-key "${{ secrets.GITHUB_TOKEN }}" --source "github" --skip-duplicate
+      run: dotnet nuget push ./ef-toolkit/out/*.nupkg -k ${GITHUB_TOKEN} -s https://nuget.pkg.github.com/wearemiew/index.json --skip-duplicate --no-symbols 
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

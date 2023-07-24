@@ -4,6 +4,10 @@
         <TargetFramework>net8.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
+        <PackageId>ef-toolkit</PackageId>
+        <Version>1.0.0</Version>
+        <Authors>nuno-silva</Authors>
+        <Company>miew</Company>
     </PropertyGroup>
 
     <ItemGroup>

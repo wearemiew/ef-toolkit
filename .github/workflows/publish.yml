@@ -16,6 +16,7 @@ on:
 env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
   DOTNET_NOLOGO: true
+  DOTNET_INSTALL_DIR: "./.dotnet"
   NuGetDirectory: ${{github.workspace}}/nuget
 
 jobs:

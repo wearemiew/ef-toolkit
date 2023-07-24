@@ -33,7 +33,7 @@ jobs:
       uses: actions/setup-dotnet@v3
     
     # Create the NuGet package in the folder from the environment variable NuGetDirectory
-    - run: dotnet pack ${{ env.PROJECT_PATH }} --configuration Release -p:PackageVersion=${{ github.ref }} --output ${{env.NUGGETDIRECTORY}}
+    - run: dotnet pack ${{ env.PROJECT_PATH }} --configuration Release -p:PackageVersion=${{ github.ref_name }} --output ${{env.NUGGETDIRECTORY}}
 
     - name: Publish NuGet package
       run: dotnet nuget push ${{env.NUGGETDIRECTORY}}/*.nupkg -k ${GITHUB_TOKEN} -s ${{env.NUGGET_SOURCE}}  --no-symbols 

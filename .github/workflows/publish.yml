@@ -1,11 +1,10 @@
-# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Build
 
-name: publish
 on:
-  workflow_dispatch: # Allow running the workflow manually from the GitHub UI
   push:
-    tags:
-      - 'v*'       # Run the workflow when pushing to the main branch
+    branches:
+      - release/v*
+    # Run the workflow when pushing to the main branch
 
 env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
@@ -26,20 +25,19 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v3
       with:
-        fetch-depth: 0 # Get all history to allow automatic versioning using MinVer
-    
+        fetch-depth: 0 # Get all history to allow automatic versioning using 
+      
     # Store the version, stripping any v-prefix
     - name: Write release version
       run: |
-        VERSION=${GITHUB_REF_NAME#v}
-        echo Version: $VERSION
-        echo "VERSION=$VERSION" >> $GITHUB_ENV
-
-    # Use version in other step
-    - name: Read version
-      run: | 
-        echo Version now: ${VERSION}
+        raw=$(git branch -r --contains ${{ github.ref }})
+        branch=${raw##*/}
+        echo "::set-output name=branch::$branch"
+        echo "Branch is $branch."
     
+    - name: Information
+      run: echo "Building release v*"
+
     # Create the NuGet package in the folder from the environment variable NuGetDirectory
         # Install the .NET SDK indicated in the global.json file
     - name: Download .net

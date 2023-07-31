@@ -32,8 +32,9 @@ jobs:
       run: |
         raw=$(git branch -r --contains ${{ github.ref }})
         branch=${raw##*/}
+        VERSION= ${branch#v}
         echo "::set-output name=branch::$branch"
-        echo "Branch is $branch."
+        echo "Branch is $branch. on version $VERSION"
     
     - name: Information
       run: echo "Building release v*"

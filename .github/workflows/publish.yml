@@ -53,9 +53,14 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Create a Release
-      uses: elgohr/Github-Release-Action@v4
+    # - name: Create a Release
+    #   uses: elgohr/Github-Release-Action@v4
+    #   env:
+    #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    #   with:
+    #       title: v${VERSION}
+    
+    - name: Semantic Release
+      uses: cycjimmy/semantic-release-action@v3
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-          title: v${VERSION}

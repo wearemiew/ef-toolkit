@@ -1,0 +1,14 @@
+{
+  "devDependencies": {
+    "@commitlint/cli": "^17.7.1",
+    "@commitlint/config-conventional": "^17.7.0",
+    "@semantic-release/github": "^9.0.4",
+    "husky": "^8.0.3",
+    "semantic-release": "^21.0.7"
+  },
+  "release": {
+    "branches": [
+      "dev-commitlint"
+    ]
+  }
+}

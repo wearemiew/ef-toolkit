@@ -21,7 +21,7 @@ public static class PaginationIQueryableHelper
     private static async Task<PaginatedIEnumerable<T>> Build<T>(IQueryable<T> query, int? page, int? size)
     {
         var list = query
-            .Skip((int)(page! * size!))
+            .Skip((int)((page!-1) * size!))
             .Take((int)size!)
             .ToListAsync();
 

@@ -46,7 +46,7 @@ jobs:
       uses: actions/setup-dotnet@v3
 
     - name: Pack nugget package
-      run: dotnet pack ${{ env.PROJECT_PATH }} --configuration Release -p:PackageVersion=${VERSION} --output ${{env.NUGGETDIRECTORY}}
+      run: dotnet pack ${{ env.PROJECT_PATH }} --configuration Release -p:PackageVersion=${version} --output ${{env.NUGGETDIRECTORY}}
 
     - name: Publish NuGet package
       run: dotnet nuget push ${{env.NUGGETDIRECTORY}}/*.nupkg -k ${GITHUB_TOKEN} -s ${{env.NUGGET_SOURCE}}  --no-symbols 
@@ -58,7 +58,7 @@ jobs:
     #   env:
     #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     #   with:
-    #       title: v${VERSION}
+    #       title: v${version}
     
     - name: Semantic Release
       uses: cycjimmy/semantic-release-action@v3

@@ -47,7 +47,7 @@ jobs:
       uses: actions/setup-dotnet@v3
 
     - name: Pack nugget package
-      run: dotnet pack ${{ env.PROJECT_PATH }} --configuration Release -p:PackageVersion=${version} --output ${{env.NUGGETDIRECTORY}}
+      run: dotnet pack ${{ env.PROJECT_PATH }} --configuration Release -p:PackageVersion=1.0.9 --output ${{env.NUGGETDIRECTORY}}
 
     - name: Publish NuGet package
       run: dotnet nuget push ${{env.NUGGETDIRECTORY}}/*.nupkg -k ${GITHUB_TOKEN} -s ${{env.NUGGET_SOURCE}}  --no-symbols 

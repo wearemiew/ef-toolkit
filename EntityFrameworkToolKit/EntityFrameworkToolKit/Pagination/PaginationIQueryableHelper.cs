@@ -20,14 +20,13 @@ public static class PaginationIQueryableHelper
 
     private static async Task<PaginatedIEnumerable<T>> Build<T>(IQueryable<T> query, int? page, int? size)
     {
-        var list = query
+        var list = await query
             .Skip((int)((page!-1) * size!))
             .Take((int)size!)
             .ToListAsync();
 
-        var count = query.CountAsync();
-        await Task.WhenAll(list, count);
-        return new PaginatedIEnumerable<T>(list.Result, count.Result);
+        var count = await query.CountAsync();
+        return new PaginatedIEnumerable<T>(list, count);
     }
 
     private static bool IsPaginationValid(int? page, int? size)

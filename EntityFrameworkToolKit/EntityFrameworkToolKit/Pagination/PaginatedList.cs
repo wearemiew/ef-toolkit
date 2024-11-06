@@ -1,6 +1,6 @@
 ﻿using System.Collections;
 
-namespace Miew.Core;
+namespace EntityFrameworkToolKit.Pagination;
 
 public class PaginatedList<T> : IList<T>
 {

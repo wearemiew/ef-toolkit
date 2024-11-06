@@ -34,7 +34,9 @@ jobs:
         raw=$(git branch -r --contains ${{ github.ref }})
         echo "$raw"
         branch=${raw##*/}
+        echo "Branch : $branch"
         VERSION= ${branch#v}
+        echo "Version : $VERSION"
         echo "::set-output name=branch::$branch"
         echo "Branch is $branch. on version $VERSION"
 

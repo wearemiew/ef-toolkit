@@ -31,14 +31,10 @@ jobs:
     # Store the version, stripping any v-prefix
     - name: Write release version
       run: |
-        raw=$(git branch -r --contains ${{ github.ref }})
-        echo "$raw"
-        branch=${raw##*/}
-        echo "Branch : $branch"
-        VERSION= ${branch#v}
-        echo "Version : $VERSION"
-        echo "::set-output name=branch::$branch"
-        echo "Branch is $branch. on version $VERSION"
+        # Extract the version number from the branch name
+        version=$(echo "${GITHUB_REF}" | cut -d '/' -f 3 | cut -c 2-)
+        
+        echo "::set-output name=version::$version"
 
     
     - name: Information

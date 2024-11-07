@@ -1,10 +1,8 @@
 name: Build
 
 on:
-  push:
-    branches:
-      - release/v*
-    # Run the workflow when pushing to the main branch
+  release:
+    types: [created]
 
 env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
@@ -28,44 +26,23 @@ jobs:
       with:
         fetch-depth: 0 # Get all history to allow automatic versioning using 
       
-    - name: Extract Version
+    - name: Extract Version from Release
+      id: extract_version
       run: |
-          # Get the branch name from the GitHub context
-          BRANCH_NAME="${GITHUB_REF#refs/heads/}"
-          # Extract the version part after 'release/'
-          VERSION="${BRANCH_NAME#release/}"
-          # Remove the leading 'v' if it exists
-          VERSION="${VERSION#v}"
-          echo "Branch Name: $BRANCH_NAME"
-          echo "Extracted Version: $VERSION"
-          # Set the version as an output
-          echo "version=$VERSION" >> $GITHUB_ENV
+          VERSION="${GITHUB_REF#refs/tags/}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
           
     - name: Use the Version
       run: |
           echo "The version is: ${{env.version}}"
           
-    # Create the NuGet package in the folder from the environment variable NuGetDirectory
-        # Install the .NET SDK indicated in the global.json file
-    - name: Download .net
+    - name: Download .NET SDK
       uses: actions/setup-dotnet@v3
 
-    - name: Pack nugget package
-      run: dotnet pack ${{ env.PROJECT_PATH }} --configuration Release -p:PackageVersion=${{env.version}} --output ${{env.NUGGETDIRECTORY}}
+    - name: Pack NuGet package
+      run: dotnet pack ${{ env.PROJECT_PATH }} --configuration Release -p:PackageVersion=${{ env.VERSION }} --output ${{ env.NUGGETDIRECTORY }}
 
     - name: Publish NuGet package
-      run: dotnet nuget push ${{env.NUGGETDIRECTORY}}/*.nupkg -k ${GITHUB_TOKEN} -s ${{env.NUGGET_SOURCE}}  --no-symbols 
+      run: dotnet nuget push ${{ env.NUGGETDIRECTORY }}/*.nupkg -k ${{ secrets.GITHUB_TOKEN }} -s ${{ env.NUGGET_SOURCE }} --no-symbols
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Install GitHub CLI
-      uses: actions/setup-node@v2
-      with:
-        node-version: '14'
-    - run: npm install -g @actions/github-script gh
-
-    - name: Create GitHub Release
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        gh release create "v${{ env.VERSION }}" --title "Release v${{ env.VERSION }}" --generate-notes

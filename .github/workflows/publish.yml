@@ -31,6 +31,7 @@ jobs:
     - name: Extract Version
       run: |
           version=$(echo "${GITHUB_REF}" | cut -d '/' -f 3 | cut -c 2-)
+          echo "version=$version"
           echo "version=$version" >> $GITHUB_OUTPUT
           
     - name: Use the Version

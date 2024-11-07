@@ -43,11 +43,7 @@ jobs:
           
     - name: Use the Version
       run: |
-          echo "The version is: ${{ steps.extract-version.outputs.version }}"
-
-    
-    - name: Information
-      run: echo "Building release v*"
+          echo "The version is: ${{ env.VERSION }}
 
     # Create the NuGet package in the folder from the environment variable NuGetDirectory
         # Install the .NET SDK indicated in the global.json file
@@ -55,7 +51,7 @@ jobs:
       uses: actions/setup-dotnet@v3
 
     - name: Pack nugget package
-      run: dotnet pack ${{ env.PROJECT_PATH }} --configuration Release -p:PackageVersion=${VERSION} --output ${{env.NUGGETDIRECTORY}}
+      run: dotnet pack ${{ env.PROJECT_PATH }} --configuration Release -p:PackageVersion=${{ env.VERSION }} --output ${{env.NUGGETDIRECTORY}}
 
     - name: Publish NuGet package
       run: dotnet nuget push ${{env.NUGGETDIRECTORY}}/*.nupkg -k ${GITHUB_TOKEN} -s ${{env.NUGGET_SOURCE}}  --no-symbols 

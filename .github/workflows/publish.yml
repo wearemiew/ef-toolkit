@@ -53,4 +53,4 @@ jobs:
             -d '{
                   "text": "🎉 A new release has been created: *{{ github.event.release.name }}* \n\nRelease Tag: {{ github.event.release.tag_name }} \nRelease URL: [{{ github.event.release.html_url }}]({{ github.event.release.html_url }}) \n\nRelease Notes: \n{{ github.event.release.body }} \n\nCreated by: {{ github.actor }}"
                 }' \
-            ${{ secrets.CHAT_WEBHOOK_URL }}
+            'https://chat.googleapis.com/v1/spaces/AAAAp1BXZnQ/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=JWQ-U-3AA0K7ghbkhkTPzdIHpglLyjKBHrL8UclV0lM'

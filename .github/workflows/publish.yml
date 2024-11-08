@@ -51,20 +51,26 @@ jobs:
       run: |
             curl -X POST -H "Content-Type: application/json" \
             -d '{
-            "cards": [{
-              "header": {
-                "title": "New Release Created",
-                "subtitle": "GitHub Release Notification",
-                "imageUrl": "https://avatars.githubusercontent.com/u/9919?s=200&v=4",
-                "imageStyle": "IMAGE"
-              },
-              "sections": [{
-                "widgets": [{
-                  "textParagraph": {
-                    "text": "🎉 *New Release:* ${{ github.event.release.name }}\n\n🔖 *Tag:* ${{ github.event.release.tag_name }}\n🔗 *Release URL:* [${{ github.event.release.html_url }}](${{ github.event.release.html_url })\n\n📜 *Release Notes:*\n${{ github.event.release.body }}\n\nCreated by: ${{ github.actor }}"
+                "cards": [
+                    {
+                        "header": {
+                            "title": "New Release Created",
+                            "subtitle": "GitHub Release Notification",
+                            "imageUrl": "https://avatars.githubusercontent.com/u/9919?s=200&v=4",
+                            "imageStyle": "IMAGE"
+                        },
+                        "sections": [
+                            {
+                                "widgets": [
+                                    {
+                                        "textParagraph": {
+                                            "text": "🎉 *New Release:* ${{ github.event.release.name }}\n\n 🔖 *Tag:* ${{ github.event.release.tag_name }}\n🔗 *Release URL:* ${{ github.event.release.html_url }\n\n📜 *Release Notes:*\n${{ github.event.release.body }}\n\n Created by: ${{ github.actor }}"
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
                     }
-                  }]
-                }]
-              }]
+                ]
             }' \
             'https://chat.googleapis.com/v1/spaces/AAAAp1BXZnQ/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=JWQ-U-3AA0K7ghbkhkTPzdIHpglLyjKBHrL8UclV0lM'

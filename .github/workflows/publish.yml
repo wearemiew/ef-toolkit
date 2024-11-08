@@ -49,29 +49,30 @@ jobs:
 
     - name: Send notification to Google Chat
       run: |
-        curl -X POST -H "Content-Type: application/json" \
-        -d '{
-            "cards": [
+          curl -X POST -H "Content-Type: application/json" \
+            -d '{
+              "cards": [
                 {
-                    "header": {
-                        "title": "New Release Created",
-                        "subtitle": "GitHub Release Notification",
-                        "imageUrl": "https://avatars.githubusercontent.com/u/9919?s=200&v=4",
-                        "imageStyle": "IMAGE"
-                    },
-                    "sections": [
+                  "header": {
+                    "title": "🎉 New Release Created: Version ${{ github.event.release.tag_name }}",
+                    "subtitle": "GitHub Release Notification",
+                    "imageUrl": "https://avatars.githubusercontent.com/u/9919?s=200&v=4",
+                    "imageStyle": "IMAGE"
+                  },
+                  "sections": [
+                    {
+                      "widgets": [
                         {
-                            "widgets": [
-                                {
-                                    "textParagraph": {
-                                        "text": "🎉 *New Release:* ${{ github.event.release.name }}\n\n 🔖 *Tag:* ${{ github.event.release.tag_name }}\n🔗 *Release URL:* ${{ github.event.release.html_url }}\n\n📜 *Release Notes:*\n${{ github.event.release.body }}\n\n Created by: ${{ github.actor }}"
-                                    }
-                                }
-                            ]
+                          "textParagraph": {
+                            "text": "🔖 **Tag:** ${{ github.event.release.tag_name }}\n\n📎 **Release URL:** [Release ${{ github.event.release.tag_name }}](${{ github.event.release.html_url }})\n\n📜 **Release Notes:**\n${{ github.event.release.body }}\n\n👤 **Created by:** ${{ github.actor }}"
+                          }
                         }
-                    ]
+                      ]
+                    }
+                  ]
                 }
-            ]
-        }' \
-        'https://chat.googleapis.com/v1/spaces/AAAACm74opc/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=Ln6Gy169lQAgGz9wc8xVSgmhn2elvBlezsUAO0BrGzk'
+              ]
+            }' \
+            'https://chat.googleapis.com/v1/spaces/AAAACm74opc/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=Ln6Gy169lQAgGz9wc8xVSgmhn2elvBlezsUAO0BrGzk'
+
     

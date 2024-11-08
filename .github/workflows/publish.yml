@@ -64,7 +64,7 @@ jobs:
                                 "widgets": [
                                     {
                                         "textParagraph": {
-                                            "text": "🎉 *New Release:* ${{ github.event.release.name }}\n\n 🔖 *Tag:* ${{ github.event.release.tag_name }}\n🔗 *Release URL:* ${{ github.event.release.html_url }\n\n📜 *Release Notes:*\n${{ github.event.release.body }}\n\n Created by: ${{ github.actor }}"
+                                            "text": "🎉 *New Release:* ${{ github.event.release.name }}\n\n 🔖 *Tag:* ${{ github.event.release.tag_name }}\n🔗 *Release URL:* ${{ github.event.release.html_url }}\n\n📜 *Release Notes:*\n${{ github.event.release.body }}\n\n Created by: ${{ github.actor }}"
                                         }
                                     }
                                 ]

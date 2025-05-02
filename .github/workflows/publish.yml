@@ -91,6 +91,6 @@ jobs:
                     }
                 ]
             }' \
-            'https://chat.googleapis.com/v1/spaces/AAAACm74opc/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=Ln6Gy169lQAgGz9wc8xVSgmhn2elvBlezsUAO0BrGzk'
+            '${{ secrets.GOOGLE_CHAT_WEBHOOK }}'
 
     

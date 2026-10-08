@@ -112,6 +112,8 @@ See the [CHANGELOG](https://github.com/wearemiew/ef-toolkit/blob/main/CHANGELOG.
 
 Contributions are welcome! Open a pull request against `dev`. Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/) (checked by a commit hook after `npm install`).
 
+Releases are automatic: every merge to `dev` publishes a prerelease (`X.Y.Z-dev.N`), and every merge to `main` publishes a stable version and creates a `vX.Y.Z` release. The version bump is derived from the commit messages (`feat` → minor, `fix` → patch, `!`/`BREAKING CHANGE` → major).
+
 ```bash
 dotnet test EntityFrameworkToolKit/EntityFrameworkToolKit.sln
 ```

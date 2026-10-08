@@ -1,39 +1,152 @@
-name: CI
+name: CI/CD
 
+# PRs into dev/main: build and test only.
+# Push to dev:  also publish a prerelease (e.g. 2.1.0-dev.3) to GitHub Packages.
+# Push to main: also publish the stable version, tag it (v2.0.0) and create a GitHub release.
+# Versions come from GitVersion.yml (Conventional Commits drive the bump).
 on:
   push:
     branches: [dev, main]
   pull_request:
     branches: [dev, main]
+  workflow_dispatch:
 
-permissions:
-  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Superseded PR runs can go; a publish on dev/main must never be cut off halfway.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   DOTNET_NOLOGO: true
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
   SOLUTION: EntityFrameworkToolKit/EntityFrameworkToolKit.sln
+  PROJECT_PATH: EntityFrameworkToolKit/EntityFrameworkToolKit/EntityFrameworkToolKit.csproj
 
 jobs:
-  build-and-test:
+  build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.gitversion.outputs.semVer }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # GitVersion needs the full history and tags
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 8.0.x
 
+      - name: Setup GitVersion
+        uses: gittools/actions/gitversion/setup@v4.7.0
+        with:
+          versionSpec: 6.8.x
+
+      - name: Determine version
+        id: gitversion
+        uses: gittools/actions/gitversion/execute@v4.7.0
+
       - name: Restore
         run: dotnet restore ${{ env.SOLUTION }}
 
       - name: Build
-        run: dotnet build ${{ env.SOLUTION }} --configuration Release --no-restore -warnaserror
+        run: >
+          dotnet build ${{ env.SOLUTION }} --configuration Release --no-restore -warnaserror
+          -p:Version=${{ steps.gitversion.outputs.semVer }}
+          -p:AssemblyVersion=${{ steps.gitversion.outputs.assemblySemVer }}
+          -p:FileVersion=${{ steps.gitversion.outputs.assemblySemFileVer }}
+          -p:InformationalVersion=${{ steps.gitversion.outputs.informationalVersion }}
 
       - name: Check formatting
         run: dotnet format ${{ env.SOLUTION }} --verify-no-changes --no-restore
 
       - name: Test
         run: dotnet test ${{ env.SOLUTION }} --configuration Release --no-build
+
+      - name: Pack
+        run: >
+          dotnet pack ${{ env.PROJECT_PATH }} --configuration Release --no-build --output ./artifacts
+          -p:PackageVersion=${{ steps.gitversion.outputs.semVer }}
+
+      - name: Upload package
+        uses: actions/upload-artifact@v7
+        with:
+          name: nuget-package
+          path: ./artifacts/*.nupkg
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Download package
+        uses: actions/download-artifact@v8
+        with:
+          name: nuget-package
+          path: ./artifacts
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish to GitHub Packages
+        run: >
+          dotnet nuget push "./artifacts/*.nupkg"
+          --api-key ${{ secrets.GITHUB_TOKEN }}
+          --source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
+          --skip-duplicate --no-symbols
+
+  release:
+    needs: [build, publish]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - name: Download package
+        uses: actions/download-artifact@v8
+        with:
+          name: nuget-package
+          path: ./artifacts
+
+      - name: Create GitHub release
+        id: release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: v${{ env.VERSION }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          files: ./artifacts/*.nupkg
+
+      - name: Send notification to Google Chat
+        # The package is already published; a notification failure must not mark the release as failed.
+        continue-on-error: true
+        env:
+          WEBHOOK_URL: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
+          ACTOR: ${{ github.actor }}
+          RELEASE_URL: ${{ steps.release.outputs.url }}
+        run: |
+          jq -n --arg tag "v$VERSION" --arg actor "$ACTOR" --arg url "$RELEASE_URL" '{
+            cards: [{
+              header: {
+                title: "Entity Framework Toolkit \($tag) 🎉",
+                subtitle: "New Release is LIVE",
+                imageUrl: "https://avatars.githubusercontent.com/u/9919?s=200&v=4",
+                imageStyle: "IMAGE"
+              },
+              sections: [
+                { widgets: [{ textParagraph: { text: "🔖 Tag: \($tag)\n\n👤 **Created by:** \($actor)" } }] },
+                { widgets: [{ buttons: [{ textButton: { text: "View Release", onClick: { openLink: { url: $url } } } }] }] }
+              ]
+            }]
+          }' | curl -sS --fail -X POST -H "Content-Type: application/json" -d @- "$WEBHOOK_URL"

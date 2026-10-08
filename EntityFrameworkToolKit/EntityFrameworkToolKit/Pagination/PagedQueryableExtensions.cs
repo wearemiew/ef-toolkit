@@ -36,10 +36,56 @@ public static class PagedQueryableExtensions
     }
 
     /// <summary>
+    /// Executes the query for a client's <see cref="PageRequest"/>, applying <see cref="PagingOptions.Default"/>
+    /// (20 items per page when unspecified, at most 100).
+    /// </summary>
+    /// <typeparam name="T">The type of the items.</typeparam>
+    /// <param name="query">An ordered query (it must contain OrderBy/OrderByDescending, e.g. from <c>ApplySort</c>).</param>
+    /// <param name="request">The page request, typically bound from the query string.</param>
+    /// <param name="cancellationToken">A token to cancel the database calls.</param>
+    /// <returns>The requested page and its metadata.</returns>
+    /// <exception cref="InvalidQueryRequestException">The requested page or page size is less than 1, or the page is too large.</exception>
+    /// <exception cref="InvalidOperationException">The query is not ordered.</exception>
+    public static Task<PagedResult<T>> ToPagedListAsync<T>(
+        this IQueryable<T> query,
+        PageRequest request,
+        CancellationToken cancellationToken = default) =>
+        query.ToPagedListAsync(request, PagingOptions.Default, cancellationToken);
+
+    /// <summary>
+    /// Executes the query for a client's <see cref="PageRequest"/>, applying the given server-side <paramref name="options"/>.
+    /// </summary>
+    /// <typeparam name="T">The type of the items.</typeparam>
+    /// <param name="query">An ordered query (it must contain OrderBy/OrderByDescending, e.g. from <c>ApplySort</c>).</param>
+    /// <param name="request">The page request, typically bound from the query string.</param>
+    /// <param name="options">The default and maximum page size.</param>
+    /// <param name="cancellationToken">A token to cancel the database calls.</param>
+    /// <returns>The requested page and its metadata.</returns>
+    /// <exception cref="InvalidQueryRequestException">The requested page or page size is less than 1, or the page is too large.</exception>
+    /// <exception cref="InvalidOperationException">The query is not ordered.</exception>
+    public static Task<PagedResult<T>> ToPagedListAsync<T>(
+        this IQueryable<T> query,
+        PageRequest request,
+        PagingOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(options);
+        var (page, pageSize) = request.Normalize(options);
+        return query.ToPagedListAsync(page, pageSize, cancellationToken);
+    }
+
+    /// <summary>
     /// Executes the query and returns the requested page when both <paramref name="page"/> and
     /// <paramref name="pageSize"/> are 1 or greater; otherwise returns every item as a single page
     /// whose <see cref="PagedResult{T}.PageSize"/> equals the item count.
     /// </summary>
+    /// <remarks>
+    /// Invalid values return everything, unbounded. Don't pass raw query-string values from a public API: use
+    /// <see cref="PageRequest"/> with <see cref="ToPagedListAsync{T}(IQueryable{T}, PageRequest, CancellationToken)"/>,
+    /// which applies <see cref="PagingOptions.MaxPageSize"/>.
+    /// </remarks>
     /// <typeparam name="T">The type of the items.</typeparam>
     /// <param name="query">The query. It must be ordered when paging is applied.</param>
     /// <param name="page">The 1-based page number, or <see langword="null"/> to return everything.</param>

@@ -17,6 +17,11 @@ All notable changes to this project are documented in this file.
 - The repository failed to build because `global.json` pinned a .NET 8 preview SDK.
 
 ### Added
+- `PageRequest` and `PagingOptions`: bind `page`/`pageSize`/`sort` from the query string with defaults (page 1, 20 items) and a page-size cap (100); new `ToPagedListAsync(PageRequest[, PagingOptions])` overloads.
+- `SortMap<T>` and `ApplySort`: allow-listed, client-driven sorting (`?sort=-price,name`) with a stable tie-breaker.
+- `WhereIf`: apply a filter only when a condition holds.
+- `InvalidQueryRequestException`: thrown only for bad client paging/sorting input, so APIs can map it to a 400 without masking server bugs.
+- Sample app (`samples/`) with a smoke test that exercises the packed package end to end.
 - `PagedResult<T>.Map(selector)` to project items while keeping the paging metadata.
 - `CancellationToken` support.
 - The `COUNT` query is skipped when the fetched page already shows where the data ends.

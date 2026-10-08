@@ -35,7 +35,7 @@ public sealed class TestDbContext : DbContext
 
         var context = new TestDbContext(connection, options, commands);
         context.Database.EnsureCreated();
-        context.Entities.AddRange(Enumerable.Range(1, count).Select(i => new MyEntity { Id = i, Name = $"Entity {i}" }));
+        context.Entities.AddRange(Enumerable.Range(1, count).Select(i => new MyEntity { Id = i, Name = $"Entity {i}", Price = i % 5 }));
         context.SaveChanges();
         context.ChangeTracker.Clear();
         commands.Clear();

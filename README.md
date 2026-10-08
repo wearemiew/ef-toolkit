@@ -88,6 +88,43 @@ app.MapGet("/products", (int page, int pageSize, ProductService service, Cancell
 }
 ```
 
+## API helpers
+
+Building blocks for list endpoints, so a typical `GET /products?search=…&sort=-price,name&page=2&pageSize=50` is one expression:
+
+```csharp
+using EntityFrameworkToolKit.Filtering;
+using EntityFrameworkToolKit.Pagination;
+using EntityFrameworkToolKit.Sorting;
+
+static class ProductSorts
+{
+    // The only fields clients may sort by. Default = initial order and final tie-breaker (use a unique key).
+    public static readonly SortMap<Product> Map = new SortMap<Product>()
+        .Add("name", p => p.Name)
+        .Add("price", p => p.Price)
+        .Default(p => p.Id);
+}
+
+app.MapGet("/products", ([AsParameters] PageRequest request, string? search, ShopDb db, CancellationToken ct) =>
+    db.Products
+        .WhereIf(!string.IsNullOrWhiteSpace(search), p => p.Name.Contains(search!))
+        .ApplySort(request.Sort, ProductSorts.Map)
+        .ToPagedListAsync(request, ct));
+```
+
+| Helper | What it does |
+|---|---|
+| `PageRequest` | Binds `page`, `pageSize` and `sort` from the query string (all optional). Missing values default to page 1 and 20 items; `pageSize` is clamped to 100. Pass `new PagingOptions(defaultPageSize, maxPageSize)` to `ToPagedListAsync` to change those limits. |
+| `SortMap<T>` + `ApplySort` | Sorts by a spec like `-price,name` (`-` = descending), **only** by registered fields. Unknown or repeated fields throw `ArgumentException` listing the allowed fields. The default key is always appended as a tie-breaker so pages never overlap. |
+| `WhereIf(condition, predicate)` | Applies a filter only when the condition is true — optional filters without `if` blocks. |
+
+Bad client input (`?page=0`, `?pageSize=-1`, `?sort=unknown`, a page too large to reach) throws **`InvalidQueryRequestException`**, whose `ParamName` is the query parameter. Map exactly that type to a 400, as the [sample app](samples/README.md) does. Don't map `ArgumentException` in general: that would report server bugs as bad requests.
+
+`PagingOptions` checks its limits when constructed, so a misconfiguration (e.g. `new PagingOptions(defaultPageSize: 50, maxPageSize: 20)`) fails at startup rather than on the first request.
+
+Use `ToPagedListAsync(PageRequest)` for HTTP input. The `ToPagedListAsync(int page, int pageSize)` overload is for values your own code computes; it throws `ArgumentOutOfRangeException`, a programming error.
+
 ## Migrating from 1.x
 
 | 1.x | 2.0 |

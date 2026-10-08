@@ -265,3 +265,5 @@ DynargieHSB.WebAPI/out
 Scheduler/..DynargieHSB.WebAPI/out
 
 .data/
+# Node (commit hooks)
+node_modules/

@@ -1,96 +1,66 @@
-name: Build
+name: Publish
 
 on:
   release:
-    types: [created]
+    types: [published]
 
 env:
-  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
   DOTNET_NOLOGO: true
-  DOTNET_INSTALL_DIR: "./.dotnet"
-  NUGGETDIRECTORY: ${{github.workspace}}/nuget
-  PROJECT_PATH: EntityFrameworkToolKit
-  NUGGET_SOURCE: https://nuget.pkg.github.com/wearemiew/index.json
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+  SOLUTION: EntityFrameworkToolKit/EntityFrameworkToolKit.sln
+  PROJECT_PATH: EntityFrameworkToolKit/EntityFrameworkToolKit/EntityFrameworkToolKit.csproj
+  NUGET_DIRECTORY: ${{ github.workspace }}/nuget
+  NUGET_SOURCE: https://nuget.pkg.github.com/wearemiew/index.json
 
 jobs:
-  deploy:
-    runs-on: self-hosted
+  publish:
+    runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
       packages: write
-      id-token: write
-      pull-requests: write
     steps:
-    - name: Checkout
-      uses: actions/checkout@v3
-      with:
-        fetch-depth: 0 # Get all history to allow automatic versioning using 
-      
-    - name: Extract Version from Release
-      id: extract_version
-      run: |
-          VERSION="${GITHUB_REF#refs/tags/}"
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          
-    - name: Use the Version
-      run: |
-          echo "The version is: ${{env.version}}"
-          
-    - name: Download .NET SDK
-      uses: actions/setup-dotnet@v3
+      - name: Checkout
+        uses: actions/checkout@v7
 
-    - name: Pack NuGet package
-      run: dotnet pack ${{ env.PROJECT_PATH }} --configuration Release -p:PackageVersion=${{ env.VERSION }} --output ${{ env.NUGGETDIRECTORY }}
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 8.0.x
 
-    - name: Publish NuGet package
-      run: dotnet nuget push ${{ env.NUGGETDIRECTORY }}/*.nupkg -k ${{ secrets.GITHUB_TOKEN }} -s ${{ env.NUGGET_SOURCE }} --no-symbols
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Extract version from release tag
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
 
-    - name: Send notification to Google Chat
-      run: |
-          curl -X POST -H "Content-Type: application/json" \
-            -d '{
-                "cards": [
-                    {
-                        "header": {
-                            "title": "Entity Framework Toolkit V${{ github.event.release.tag_name }} 🎉",
-                            "subtitle": "New Release is LIVE",
-                            "imageUrl": "https://avatars.githubusercontent.com/u/9919?s=200&v=4",
-                            "imageStyle": "IMAGE"
-                        },
-                        "sections": [
-                            {
-                                "widgets": [
-                                    {
-                                        "textParagraph": {
-                                            "text": "🔖 Tag: ${{ github.event.release.tag_name }}\n\n👤 **Created by:** ${{ github.actor }}"
-                                        }
-                                    }
-                                ]
-                            },
-                            {
-                                "widgets": [
-                                    {
-                                        "buttons": [
-                                            {
-                                                "textButton": {
-                                                    "text": "View Release",
-                                                    "onClick": {
-                                                        "openLink": {
-                                                            "url": "${{ github.event.release.html_url }}"
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        ]
-                                    }
-                                ]
-                            }
-                        ]
-                    }
-                ]
-            }' \
-            '${{ secrets.GOOGLE_CHAT_WEBHOOK }}'
+      - name: Test
+        run: dotnet test ${{ env.SOLUTION }} --configuration Release
 
-    
+      - name: Pack
+        run: dotnet pack ${{ env.PROJECT_PATH }} --configuration Release -p:PackageVersion="$VERSION" --output ${{ env.NUGET_DIRECTORY }}
+
+      - name: Publish to GitHub Packages
+        run: dotnet nuget push "${{ env.NUGET_DIRECTORY }}/*.nupkg" --api-key ${{ secrets.GITHUB_TOKEN }} --source ${{ env.NUGET_SOURCE }} --skip-duplicate --no-symbols
+
+      - name: Send notification to Google Chat
+        # The package is already published; a notification failure must not mark the release as failed.
+        continue-on-error: true
+        env:
+          WEBHOOK_URL: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
+          TAG: ${{ github.event.release.tag_name }}
+          ACTOR: ${{ github.actor }}
+          RELEASE_URL: ${{ github.event.release.html_url }}
+        run: |
+          jq -n --arg tag "$TAG" --arg actor "$ACTOR" --arg url "$RELEASE_URL" '{
+            cards: [{
+              header: {
+                title: "Entity Framework Toolkit V\($tag) 🎉",
+                subtitle: "New Release is LIVE",
+                imageUrl: "https://avatars.githubusercontent.com/u/9919?s=200&v=4",
+                imageStyle: "IMAGE"
+              },
+              sections: [
+                { widgets: [{ textParagraph: { text: "🔖 Tag: \($tag)\n\n👤 **Created by:** \($actor)" } }] },
+                { widgets: [{ buttons: [{ textButton: { text: "View Release", onClick: { openLink: { url: $url } } } }] }] }
+              ]
+            }]
+          }' | curl -sS --fail -X POST -H "Content-Type: application/json" -d @- "$WEBHOOK_URL"

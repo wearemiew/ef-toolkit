@@ -1,4 +1,4 @@
 #!/usr/bin/env sh
 . "$(dirname -- "$0")/_/husky.sh"
 
-npm test
+dotnet format EntityFrameworkToolKit/EntityFrameworkToolKit.sln --verify-no-changes

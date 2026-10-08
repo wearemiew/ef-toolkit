@@ -1,17 +1,39 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <TargetFramework>net8.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    </PropertyGroup>
+
+    <!-- Package metadata. The version comes from the release tag in CI (-p:PackageVersion=...). -->
+    <PropertyGroup>
         <PackageId>Miew.EntityFramework.Toolkit</PackageId>
-        <Version>1.0.0</Version>
         <Authors>nuno-silva</Authors>
         <Company>miew</Company>
+        <Description>Lightweight helpers for Entity Framework Core: async pagination of IQueryable into a serializable PagedResult with total count and page metadata.</Description>
+        <PackageTags>entity-framework-core;efcore;pagination;paging;iqueryable</PackageTags>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageProjectUrl>https://github.com/wearemiew/ef-toolkit</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/wearemiew/ef-toolkit</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <!-- GitHub Packages has no symbol server, so embed the PDB (SourceLink still works). -->
+        <DebugType>embedded</DebugType>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(GITHUB_ACTIONS)' == 'true'">
+        <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
     </PropertyGroup>
 
     <ItemGroup>
         <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.10" />
     </ItemGroup>
-    
+
+    <ItemGroup>
+        <None Include="../../README.md" Pack="true" PackagePath="/" />
+        <InternalsVisibleTo Include="EntityFrameworkToolKit.Tests" />
+    </ItemGroup>
+
 </Project>

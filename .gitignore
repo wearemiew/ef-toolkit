@@ -267,3 +267,9 @@ Scheduler/..DynargieHSB.WebAPI/out
 .data/
 # Node (commit hooks)
 node_modules/
+
+# Pagination sample (samples/)
+samples/.localfeed/
+samples/.packages/
+samples/sample.log
+samples/**/sample.db*

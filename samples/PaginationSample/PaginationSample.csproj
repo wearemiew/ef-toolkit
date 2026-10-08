@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <!-- Lets the sample run on machines that only have a newer runtime installed. -->
+        <RollForward>Major</RollForward>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <!-- Consumed as a real package from samples/.localfeed (see nuget.config and smoke-test.sh), not as a project reference. -->
+        <PackageReference Include="Miew.EntityFramework.Toolkit" Version="0.0.0-local" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.31" />
+    </ItemGroup>
+
+</Project>

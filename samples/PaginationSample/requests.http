@@ -25,5 +25,17 @@ GET {{host}}/products/summaries?page=1&pageSize=3
 ### Unordered query — 500 explaining OrderBy is required
 GET {{host}}/products/unordered
 
+### PageRequest defaults — page 1, 20 items, default (Id) order
+GET {{host}}/products/search
+
+### Search + sort + paging from the query string
+GET {{host}}/products/search?search=01&sort=-price,name&page=1&pageSize=5
+
+### Oversized pageSize is clamped to 100
+GET {{host}}/products/search?pageSize=500
+
+### Unknown sort field — 400 listing the allowed fields
+GET {{host}}/products/search?sort=secret
+
 ### Generated SQL
 GET {{host}}/debug/sql?page=3&pageSize=10

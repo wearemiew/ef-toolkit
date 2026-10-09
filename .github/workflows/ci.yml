@@ -24,7 +24,7 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, test-dotnet]
     permissions:
       contents: read
     outputs:
@@ -34,6 +34,15 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0 # GitVersion needs the full history and tags
+
+      - name: Set .NET install directory
+        shell: bash
+        run: |
+          RUNNER_HOME="$(eval echo ~"$(whoami)")"
+          echo "HOME=$RUNNER_HOME" >> "$GITHUB_ENV"
+          echo "DOTNET_CLI_HOME=$RUNNER_HOME" >> "$GITHUB_ENV"
+          echo "DOTNET_INSTALL_DIR=$RUNNER_HOME/.dotnet" >> "$GITHUB_ENV"
+          echo "NUGET_PACKAGES=$GITHUB_WORKSPACE/.nuget-packages" >> "$GITHUB_ENV"
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v6
@@ -81,7 +90,7 @@ jobs:
   publish:
     needs: build
     if: github.event_name == 'push' && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, test-dotnet]
     permissions:
       packages: write
     steps:
@@ -90,6 +99,15 @@ jobs:
         with:
           name: nuget-package
           path: ./artifacts
+
+      - name: Set .NET install directory
+        shell: bash
+        run: |
+          RUNNER_HOME="$(eval echo ~"$(whoami)")"
+          echo "HOME=$RUNNER_HOME" >> "$GITHUB_ENV"
+          echo "DOTNET_CLI_HOME=$RUNNER_HOME" >> "$GITHUB_ENV"
+          echo "DOTNET_INSTALL_DIR=$RUNNER_HOME/.dotnet" >> "$GITHUB_ENV"
+          echo "NUGET_PACKAGES=$GITHUB_WORKSPACE/.nuget-packages" >> "$GITHUB_ENV"
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v6
@@ -106,7 +124,7 @@ jobs:
   release:
     needs: [build, publish]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ci-lite]
     permissions:
       contents: write
     env:

@@ -1,0 +1,4 @@
+self-hosted-runner:
+  labels:
+    - test-dotnet
+    - ci-lite

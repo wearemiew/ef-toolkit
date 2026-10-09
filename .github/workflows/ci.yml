@@ -24,7 +24,7 @@ env:
 
 jobs:
   build:
-    runs-on: [self-hosted, test-dotnet]
+    runs-on: [self-hosted, ef-toolkit-build, dotnet-build]
     permissions:
       contents: read
     outputs:
@@ -90,7 +90,7 @@ jobs:
   publish:
     needs: build
     if: github.event_name == 'push' && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')
-    runs-on: [self-hosted, test-dotnet]
+    runs-on: [self-hosted, ef-toolkit-build, dotnet-build]
     permissions:
       packages: write
     steps:
@@ -124,7 +124,7 @@ jobs:
   release:
     needs: [build, publish]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: [self-hosted, ci-lite]
+    runs-on: [self-hosted, ef-toolkit-build, dotnet-build]
     permissions:
       contents: write
     env:

@@ -1,4 +1,4 @@
 self-hosted-runner:
   labels:
-    - test-dotnet
-    - ci-lite
+    - ef-toolkit-build
+    - dotnet-build

@@ -29,10 +29,9 @@ let the user decide.
 ## Numbered rules
 
 1. **Self-hosted runners only.** GitHub-hosted labels (`ubuntu-latest` and
-   friends) are not an option anywhere in this org's CI. Target the
-   capability labels from the wiki: `[self-hosted, test-dotnet]` for jobs
-   that run the `dotnet` CLI, `[self-hosted, ci-lite]` for bash/git/curl-only
-   jobs.
+   friends) are not an option anywhere in this org's CI. This repo is a
+   deliberate exception to the wiki's capability-label convention: every job
+   in `ci.yml` runs on `[self-hosted, ef-toolkit-build, dotnet-build]`.
 2. **Every dotnet job on a shared pool runs the wiki's "Set .NET install
    directory" step immediately before `actions/setup-dotnet`** (see ".NET
    Constraints on Shared Runner Pools" in `GitHub-Actions-Runner-Labels`).
@@ -68,16 +67,21 @@ shared across tenants):
 | `build-infra` | Can run infra/tooling pipelines (Terraform, Python, etc.) |
 | `ci-lite` | Lightweight utility jobs — bash/git/python3/curl only, no Docker, no heavy toolchain |
 
-Labels for this repo's jobs (all three jobs in `ci.yml`):
+This repo is an **exception to the convention above**: its runners carry
+repo-specific labels instead of the generic capability labels, and all
+three jobs in `ci.yml` use the same set. The labels are declared in
+`.github/actionlint.yaml` so actionlint accepts them.
+
+| Label | Meaning |
+|---|---|
+| `ef-toolkit-build` | Runner dedicated to this repo (ef-toolkit) |
+| `dotnet-build` | Has the .NET SDK installed |
 
 | Job | `runs-on` |
 |---|---|
-| `build` | `[self-hosted, test-dotnet]` |
-| `publish` | `[self-hosted, test-dotnet]` |
-| `release` | `[self-hosted, ci-lite]` |
-
-Do not use `docker-build` for these: nothing here builds an image, and the
-wiki asks lightweight jobs not to compete for that pool.
+| `build` | `[self-hosted, ef-toolkit-build, dotnet-build]` |
+| `publish` | `[self-hosted, ef-toolkit-build, dotnet-build]` |
+| `release` | `[self-hosted, ef-toolkit-build, dotnet-build]` |
 
 ## What's actually in this repo
 

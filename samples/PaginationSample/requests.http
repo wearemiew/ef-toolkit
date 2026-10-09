@@ -49,5 +49,16 @@ GET {{host}}/products/feed?pageSize=10&before=PASTE_PREVIOUS_CURSOR
 ### Cursor feed sorted by price — a cursor only works with the sort it came from
 GET {{host}}/products/feed?pageSize=10&sort=-price
 
+### Rename — UpdatedAt/UpdatedBy are stamped
+PATCH {{host}}/products/95?name=Renamed
+X-User: alice
+
+### Soft delete — the row disappears from every list but stays in the table
+DELETE {{host}}/products/95
+X-User: alice
+
+### Audit view (IgnoreQueryFilters) — shows createdAt/updatedBy/isDeleted/deletedBy
+GET {{host}}/products/95/audit
+
 ### Generated SQL
 GET {{host}}/debug/sql?page=3&pageSize=10

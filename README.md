@@ -161,6 +161,59 @@ Rules:
 
 Cursors are opaque base64url strings. They aren't signed, so they're validated strictly instead. A malformed or edited cursor, a cursor from a different sort, or `after` and `before` together all throw `InvalidQueryRequestException` (`ParamName` `after` or `before`), which maps to a 400. Values only ever reach the database as SQL parameters. A cursor stops working when the sort it was made for changes (for example after a deploy that changes the sort keys); the client then gets a 400 and starts over from the first page. An empty page (because the rows around the cursor were deleted) has no cursors.
 
+## Auditing and soft delete
+
+Stamp who changed what and when, and turn deletes into a flag, without a `SaveChanges` override or a base `DbContext`:
+
+```csharp
+using EntityFrameworkToolKit.Auditing;
+
+public class Order : IUserAuditable, IUserSoftDeletable
+{
+    public int Id { get; set; }
+    public DateTime CreatedAt { get; set; }    // IAuditable (UTC)
+    public DateTime UpdatedAt { get; set; }
+    public string? CreatedBy { get; set; }     // IUserAuditable
+    public string? UpdatedBy { get; set; }
+    public bool IsDeleted { get; set; }        // ISoftDeletable
+    public DateTime? DeletedAt { get; set; }
+    public string? DeletedBy { get; set; }     // IUserSoftDeletable
+}
+
+services.AddHttpContextAccessor();
+services.AddDbContext<ShopDb>((sp, options) => options
+    .UseSqlServer(connectionString)
+    .UseAuditing(currentUser: () => sp.GetRequiredService<IHttpContextAccessor>().HttpContext?.User.Identity?.Name));
+
+protected override void OnModelCreating(ModelBuilder modelBuilder)
+{
+    // ... your configuration and query filters ...
+    modelBuilder.ApplySoftDeleteQueryFilters();   // last
+}
+```
+
+| Interface | On insert | On update | On `Remove` |
+|---|---|---|---|
+| `IAuditable` | `CreatedAt` = `UpdatedAt` = now | `UpdatedAt` = now; `CreatedAt` can't be changed | (as an update, when also soft-deletable) |
+| `IUserAuditable` | also `CreatedBy` = `UpdatedBy` = user | also `UpdatedBy` = user; `CreatedBy` can't be changed | |
+| `ISoftDeletable` | | | an `UPDATE` setting `IsDeleted` = true, `DeletedAt` = now |
+| `IUserSoftDeletable` | | | also `DeletedBy` = user |
+
+- **Opt in per entity.** Implement only the interfaces you need, so timestamps can be used without user columns, and auditing without soft delete. `UpdatedAt` is set on insert too, so it's never null and works as a cursor sort key.
+- **The current user** comes from the delegate, which is called once per save. Resolve it inside the delegate, as above, so pooled or long-lived contexts get the right user. Pass a `TimeProvider` to control the clock (e.g. in tests).
+- **`ApplySoftDeleteQueryFilters()`** adds `!IsDeleted` to every soft-deletable entity, **combined** with filters already configured (e.g. a tenant filter). Call it at the end of `OnModelCreating`: EF Core 8 keeps one filter per entity, so a later `HasQueryFilter` replaces it.
+- **Soft-deleting an entity keeps everything attached to it.** Owned types survive. EF's cascade on tracked dependents is undone, at every level: required children aren't deleted, and optional children keep their foreign key. Dependents that are themselves soft-deletable are soft-deleted with it. Deleting an already-deleted row changes nothing.
+- **To see or restore deleted rows,** query with `IgnoreQueryFilters()`, set `IsDeleted = false`, then save. `DeletedAt`/`DeletedBy` are cleared for you. On EF Core 8, `IgnoreQueryFilters()` also drops your other filters.
+- **Stamps always come from the interceptor.** On insert, values you set are replaced, so a data import can't keep historical times through `SaveChanges`.
+
+Caveats:
+- Only `SaveChanges` is intercepted. `ExecuteUpdate`/`ExecuteDelete` and raw SQL are not audited, and `ExecuteDelete` deletes for real.
+- Unique indexes on soft-deletable tables need a filter (`.HasFilter("[IsDeleted] = 0")`), or a deleted row blocks re-creating it.
+- Only **tracked** dependents are handled. Untracked soft-deletable children of a deleted parent stay visible until you delete them too, and children whose *required* navigation points at a deleted parent disappear from `Include` (the parent's filter applies). Make such children soft-deletable as well.
+- **Avoid `Update()`/`Attach` with an entity built from a request:** it writes every column, so `IsDeleted = false` from the request would un-delete the row. The stored `CreatedAt` is kept, but the returned entity shows the request's value. Load the entity and copy the changes onto it.
+- In the save that soft-deletes a parent, changes to its tracked children look like EF's cascade, so they're undone. If you remove a non-soft-deletable child, or set an optional child's foreign key to null, save that change separately. Children *added* in the same save are discarded by EF as soon as you call `Remove(parent)`.
+- Implement the interface properties implicitly and keep them mapped (no `[NotMapped]`). `ApplySoftDeleteQueryFilters()` can safely be called more than once.
+
 ## Migrating from 1.x
 
 | 1.x | 2.0 |

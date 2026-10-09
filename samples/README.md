@@ -10,3 +10,5 @@ A minimal ASP.NET Core API that uses **the packed NuGet package** (not a project
 Each response carries an `X-Db-Commands` header with the number of SQL commands it ran — a full page costs 2 (page + `COUNT`), a short last page costs 1, and a cursor page (`/products/feed`) always costs 1.
 
 The sample is not part of the solution, so CI does not build it. It uses SQLite; to try your production provider, swap `UseSqlite` in `Program.cs` and check `/debug/sql`.
+
+`Product` is also audited and soft-deletable: `PATCH`/`DELETE /products/{id}` (send an `X-User` header) and `GET /products/{id}/audit` show the stamps. The smoke test runs those checks last, because they change the data.

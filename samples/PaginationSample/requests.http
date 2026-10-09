@@ -25,5 +25,61 @@ GET {{host}}/products/summaries?page=1&pageSize=3
 ### Unordered query — 500 explaining OrderBy is required
 GET {{host}}/products/unordered
 
+### PageRequest defaults — page 1, 20 items, default (Id) order
+GET {{host}}/products/search
+
+### Search + sort + paging from the query string
+GET {{host}}/products/search?search=01&sort=-price,name&page=1&pageSize=5
+
+### Oversized pageSize is clamped to 100
+GET {{host}}/products/search?pageSize=500
+
+### Unknown sort field — 400 listing the allowed fields
+GET {{host}}/products/search?sort=secret
+
+### Cursor feed — first page; copy nextCursor into the next request
+GET {{host}}/products/feed?pageSize=10
+
+### Cursor feed — next page
+GET {{host}}/products/feed?pageSize=10&after=PASTE_NEXT_CURSOR
+
+### Cursor feed — previous page
+GET {{host}}/products/feed?pageSize=10&before=PASTE_PREVIOUS_CURSOR
+
+### Cursor feed — poll for newer rows after the last page (pass endCursor; empty until rows are added)
+GET {{host}}/products/feed?pageSize=10&after=PASTE_END_CURSOR
+
+### Cursor feed sorted by price — a cursor only works with the sort it came from
+GET {{host}}/products/feed?pageSize=10&sort=-price
+
+### Rename — UpdatedAt/UpdatedBy are stamped
+PATCH {{host}}/products/95?name=Renamed
+X-User: alice
+
+### Soft delete — the row disappears from every list but stays in the table
+DELETE {{host}}/products/95
+X-User: alice
+
+### Audit view (IgnoreQueryFilters) — shows createdAt/updatedBy/isDeleted/deletedBy
+GET {{host}}/products/95/audit
+
+### Paging without the COUNT query — totalCount null, X-Db-Commands: 1
+GET {{host}}/products/fast?page=2&pageSize=10
+
+### Paging without the COUNT query — the last page still reports the total
+GET {{host}}/products/fast?page=10&pageSize=10
+
+### Get by id — FindOrNotFoundAsync
+GET {{host}}/products/7
+
+### Missing id — 404 "Product 4242 was not found."
+GET {{host}}/products/4242
+
+### Reprice in a transaction that fails — 500, no price changes
+POST {{host}}/products/reprice?percent=10&fail=true
+
+### Reprice in a transaction — every price changes, committed together
+POST {{host}}/products/reprice?percent=10
+
 ### Generated SQL
 GET {{host}}/debug/sql?page=3&pageSize=10

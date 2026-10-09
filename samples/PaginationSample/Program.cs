@@ -1,15 +1,26 @@
 using System.Data.Common;
 using System.Globalization;
+using EntityFrameworkToolKit;
+using EntityFrameworkToolKit.Auditing;
+using EntityFrameworkToolKit.Filtering;
 using EntityFrameworkToolKit.Pagination;
+using EntityFrameworkToolKit.Querying;
+using EntityFrameworkToolKit.Sorting;
+using EntityFrameworkToolKit.Transactions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddScoped<DbCommandCounter>();
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddDbContext<ShopDbContext>((sp, options) => options
     .UseSqlite("Data Source=sample.db")
-    .AddInterceptors(sp.GetRequiredService<DbCommandCounter>()));
+    .AddInterceptors(sp.GetRequiredService<DbCommandCounter>())
+    // Stamps Created/Updated/Deleted At+By and turns deletes into soft deletes. The sample's "user" is the X-User
+    // header; a real API would read HttpContext.User. The delegate runs on every save, so it sees the current request.
+    .UseAuditing(currentUser: () =>
+        sp.GetRequiredService<IHttpContextAccessor>().HttpContext?.Request.Headers["X-User"].FirstOrDefault()));
 
 var app = builder.Build();
 
@@ -32,9 +43,15 @@ app.Use(async (context, next) =>
     {
         await next();
     }
-    catch (ArgumentOutOfRangeException ex)
+    catch (EntityNotFoundException ex) // from the …OrNotFoundAsync helpers; the message is safe to report
     {
-        await Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest).ExecuteAsync(context);
+        await Results.Problem(ex.Message, statusCode: StatusCodes.Status404NotFound).ExecuteAsync(context);
+    }
+    catch (InvalidQueryRequestException ex) // bad ?page / ?pageSize / ?sort: the client's fault, safe to report
+    {
+        await Results.ValidationProblem(
+            new Dictionary<string, string[]> { [ex.ParamName!] = [ex.Message] },
+            detail: ex.Message).ExecuteAsync(context);
     }
     catch (InvalidOperationException ex)
     {
@@ -56,9 +73,17 @@ using (var scope = app.Services.CreateScope())
     db.SaveChanges();
 }
 
-// Required paging: GET /products?page=2&pageSize=10
-app.MapGet("/products", (ShopDbContext db, int page, int pageSize, CancellationToken ct) =>
-    db.Products.OrderBy(p => p.Id).ToPagedListAsync(page, pageSize, ct));
+// Paging from the query string: GET /products?page=2&pageSize=10 (both optional; defaults 1 and 20, max 100).
+// For HTTP input use PageRequest: its errors are InvalidQueryRequestException (→ 400). The int overload is for code
+// and throws ArgumentOutOfRangeException, which is a server bug (→ 500).
+app.MapGet("/products", ([AsParameters] PageRequest request, ShopDbContext db, CancellationToken ct) =>
+    db.Products.OrderBy(p => p.Id).ToPagedListAsync(request, ct));
+
+// Paging without the COUNT query, for infinite scroll or huge tables: one SQL command per page. totalCount is null
+// (hasNextPage still works) except on the last page, where it is known for free. GET /products/fast?page=2&pageSize=10
+var fastPaging = new PagingOptions(includeTotalCount: false);
+app.MapGet("/products/fast", ([AsParameters] PageRequest request, ShopDbContext db, CancellationToken ct) =>
+    db.Products.OrderBy(p => p.Id).ToPagedListAsync(request, fastPaging, ct));
 
 // Optional paging: GET /products/optional (everything) or ?page=1&pageSize=5
 app.MapGet("/products/optional", (ShopDbContext db, int? page, int? pageSize, CancellationToken ct) =>
@@ -77,6 +102,63 @@ app.MapGet("/products/summaries", async (ShopDbContext db, int page, int pageSiz
     return result.Map(p => new ProductSummary(p.Id, string.Create(CultureInfo.InvariantCulture, $"{p.Name} ({p.Price:0.00} EUR)")));
 });
 
+// Everything a list endpoint usually hand-writes, in one line:
+// GET /products/search?search=01&sort=-price,name&page=1&pageSize=5 — every parameter optional.
+app.MapGet("/products/search", ([AsParameters] PageRequest request, string? search, ShopDbContext db, CancellationToken ct) =>
+    db.Products
+        .WhereIf(!string.IsNullOrWhiteSpace(search), p => p.Name.Contains(search!))
+        .ApplySort(request.Sort, ProductSorts.Map)
+        .ToPagedListAsync(request, ct));
+
+// Cursor (keyset) paging for feeds and infinite scroll: one query per page, fast at any depth.
+// GET /products/feed?pageSize=10, then ?after=<nextCursor> or ?before=<previousCursor>; &sort=-price works too.
+app.MapGet("/products/feed", ([AsParameters] CursorRequest request, ShopDbContext db, CancellationToken ct) =>
+    db.Products
+        .ApplySort(request.Sort, ProductSorts.Map)
+        .ToCursorPagedListAsync(request, ct));
+
+// Get by id without the null check: a missing (or soft-deleted) id throws EntityNotFoundException → 404.
+app.MapGet("/products/{id:int}", (int id, ShopDbContext db, CancellationToken ct) =>
+    db.Products.FindOrNotFoundAsync(id, ct));
+
+// Auditing + soft delete. PATCH /products/95?name=New and DELETE /products/95 (send an X-User header to see *By set).
+app.MapMethods("/products/{id:int}", ["PATCH"], async (int id, string name, ShopDbContext db, CancellationToken ct) =>
+{
+    var product = await db.Products.FindOrNotFoundAsync(id, ct);
+    product.Name = name;
+    await db.SaveChangesAsync(ct); // UpdatedAt/UpdatedBy are stamped
+    return Results.NoContent();
+});
+
+app.MapDelete("/products/{id:int}", async (int id, ShopDbContext db, CancellationToken ct) =>
+{
+    var product = await db.Products.FindOrNotFoundAsync(id, ct);
+    db.Products.Remove(product);
+    await db.SaveChangesAsync(ct); // an UPDATE setting IsDeleted, not a DELETE
+    return Results.NoContent();
+});
+
+// Every query hides deleted rows; IgnoreQueryFilters shows them (e.g. for an audit view or a restore).
+app.MapGet("/products/{id:int}/audit", async (int id, ShopDbContext db, CancellationToken ct) =>
+    await db.Products.IgnoreQueryFilters().AsNoTracking().SingleOrDefaultAsync(p => p.Id == id, ct) is { } product
+        ? Results.Ok(product)
+        : Results.NotFound());
+
+// All-or-nothing bulk update: POST /products/reprice?percent=10. The changes are saved and committed together;
+// &fail=true throws after saving, so the transaction rolls back and no price changes (→ 500).
+app.MapPost("/products/reprice", async (int percent, bool? fail, ShopDbContext db, CancellationToken ct) =>
+{
+    await db.ExecuteInTransactionAsync(async ct =>
+    {
+        foreach (var product in await db.Products.ToListAsync(ct))
+            product.Price = product.Price * (100 + percent) / 100;
+        await db.SaveChangesAsync(ct);
+        if (fail == true)
+            throw new InvalidOperationException("Repricing failed on purpose; the transaction was rolled back.");
+    }, ct);
+    return Results.NoContent();
+});
+
 // Mistake on purpose: no OrderBy, so the library refuses to page it.
 app.MapGet("/products/unordered", (ShopDbContext db, CancellationToken ct) =>
     db.Products.ToPagedListAsync(1, 10, ct));
@@ -89,18 +171,37 @@ app.MapGet("/debug/sql", (ShopDbContext db, int page, int pageSize) => new
 
 app.Run();
 
-public sealed class Product
+public sealed class Product : IUserAuditable, IUserSoftDeletable
 {
     public int Id { get; set; }
     public string Name { get; set; } = "";
     public decimal Price { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public string? CreatedBy { get; set; }
+    public string? UpdatedBy { get; set; }
+    public bool IsDeleted { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public string? DeletedBy { get; set; }
 }
 
 public sealed record ProductSummary(int Id, string Label);
 
+/// <summary>The fields clients may sort products by.</summary>
+public static class ProductSorts
+{
+    public static readonly SortMap<Product> Map = new SortMap<Product>()
+        .Add("name", p => p.Name)
+        .Add("price", p => (double)p.Price) // SQLite can't ORDER BY decimal; other providers can use p.Price directly
+        .Default(p => p.Id);
+}
+
 public sealed class ShopDbContext(DbContextOptions<ShopDbContext> options) : DbContext(options)
 {
     public DbSet<Product> Products => Set<Product>();
+
+    // Last, so the soft-delete filter is combined with any other filters configured above.
+    protected override void OnModelCreating(ModelBuilder modelBuilder) => modelBuilder.ApplySoftDeleteQueryFilters();
 }
 
 /// <summary>Counts SQL commands executed within one request scope.</summary>

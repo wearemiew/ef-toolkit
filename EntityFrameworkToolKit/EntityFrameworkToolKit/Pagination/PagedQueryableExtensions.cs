@@ -24,6 +24,32 @@ public static class PagedQueryableExtensions
         this IQueryable<T> query,
         int page,
         int pageSize,
+        CancellationToken cancellationToken = default) =>
+        query.ToPagedListAsync(page, pageSize, includeTotalCount: true, cancellationToken);
+
+    /// <summary>
+    /// Executes the query and returns the requested page, with or without the total item count.
+    /// </summary>
+    /// <typeparam name="T">The type of the items.</typeparam>
+    /// <param name="query">An ordered query (it must contain OrderBy/OrderByDescending).</param>
+    /// <param name="page">The 1-based page number.</param>
+    /// <param name="pageSize">The number of items per page.</param>
+    /// <param name="includeTotalCount">
+    /// Whether to compute <see cref="PagedResult{T}.TotalCount"/>. When <see langword="false"/>, the page is one query
+    /// that fetches one extra row to set <see cref="PagedResult{T}.HasNextPage"/>; the total is still reported when the
+    /// page turns out to be the last one.
+    /// </param>
+    /// <param name="cancellationToken">A token to cancel the database calls.</param>
+    /// <returns>The requested page and its metadata.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="page"/> or <paramref name="pageSize"/> is less than 1, or the page lies beyond <see cref="int.MaxValue"/> items.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">The query is not ordered.</exception>
+    public static Task<PagedResult<T>> ToPagedListAsync<T>(
+        this IQueryable<T> query,
+        int page,
+        int pageSize,
+        bool includeTotalCount,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
@@ -32,7 +58,50 @@ public static class PagedQueryableExtensions
         var skip = GetSkip(page, pageSize);
         PaginationGuard.EnsureOrdered(query);
 
-        return FetchPageAsync(query, page, pageSize, skip, cancellationToken);
+        return includeTotalCount
+            ? FetchPageAsync(query, page, pageSize, skip, cancellationToken)
+            : FetchPageWithoutTotalAsync(query, page, pageSize, skip, cancellationToken);
+    }
+
+    /// <summary>
+    /// Executes the query for a client's <see cref="PageRequest"/>, applying <see cref="PagingOptions.Default"/>
+    /// (20 items per page when unspecified, at most 100).
+    /// </summary>
+    /// <typeparam name="T">The type of the items.</typeparam>
+    /// <param name="query">An ordered query (it must contain OrderBy/OrderByDescending, e.g. from <c>ApplySort</c>).</param>
+    /// <param name="request">The page request, typically bound from the query string.</param>
+    /// <param name="cancellationToken">A token to cancel the database calls.</param>
+    /// <returns>The requested page and its metadata.</returns>
+    /// <exception cref="InvalidQueryRequestException">The requested page or page size is less than 1, or the page is too large.</exception>
+    /// <exception cref="InvalidOperationException">The query is not ordered.</exception>
+    public static Task<PagedResult<T>> ToPagedListAsync<T>(
+        this IQueryable<T> query,
+        PageRequest request,
+        CancellationToken cancellationToken = default) =>
+        query.ToPagedListAsync(request, PagingOptions.Default, cancellationToken);
+
+    /// <summary>
+    /// Executes the query for a client's <see cref="PageRequest"/>, applying the given server-side <paramref name="options"/>.
+    /// </summary>
+    /// <typeparam name="T">The type of the items.</typeparam>
+    /// <param name="query">An ordered query (it must contain OrderBy/OrderByDescending, e.g. from <c>ApplySort</c>).</param>
+    /// <param name="request">The page request, typically bound from the query string.</param>
+    /// <param name="options">The default and maximum page size.</param>
+    /// <param name="cancellationToken">A token to cancel the database calls.</param>
+    /// <returns>The requested page and its metadata.</returns>
+    /// <exception cref="InvalidQueryRequestException">The requested page or page size is less than 1, or the page is too large.</exception>
+    /// <exception cref="InvalidOperationException">The query is not ordered.</exception>
+    public static Task<PagedResult<T>> ToPagedListAsync<T>(
+        this IQueryable<T> query,
+        PageRequest request,
+        PagingOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(options);
+        var (page, pageSize) = request.Normalize(options);
+        return query.ToPagedListAsync(page, pageSize, options.IncludeTotalCount, cancellationToken);
     }
 
     /// <summary>
@@ -40,6 +109,11 @@ public static class PagedQueryableExtensions
     /// <paramref name="pageSize"/> are 1 or greater; otherwise returns every item as a single page
     /// whose <see cref="PagedResult{T}.PageSize"/> equals the item count.
     /// </summary>
+    /// <remarks>
+    /// Invalid values return everything, unbounded. Don't pass raw query-string values from a public API: use
+    /// <see cref="PageRequest"/> with <see cref="ToPagedListAsync{T}(IQueryable{T}, PageRequest, CancellationToken)"/>,
+    /// which applies <see cref="PagingOptions.MaxPageSize"/>.
+    /// </remarks>
     /// <typeparam name="T">The type of the items.</typeparam>
     /// <param name="query">The query. It must be ordered when paging is applied.</param>
     /// <param name="page">The 1-based page number, or <see langword="null"/> to return everything.</param>
@@ -77,6 +151,26 @@ public static class PagedQueryableExtensions
             : await query.CountAsync(cancellationToken).ConfigureAwait(false);
 
         return new PagedResult<T>(items, page, pageSize, totalCount);
+    }
+
+    private static async Task<PagedResult<T>> FetchPageWithoutTotalAsync<T>(
+        IQueryable<T> query,
+        int page,
+        int pageSize,
+        int skip,
+        CancellationToken cancellationToken)
+    {
+        // One extra row tells whether another page exists, without counting.
+        var take = pageSize == int.MaxValue ? pageSize : pageSize + 1;
+        var items = await query.Skip(skip).Take(take).ToListAsync(cancellationToken).ConfigureAwait(false);
+        var hasNextPage = items.Count > pageSize;
+        if (hasNextPage)
+            items.RemoveAt(items.Count - 1);
+
+        // On the last page the total is known for free (unless it is empty past the first page).
+        return !hasNextPage && (items.Count > 0 || skip == 0)
+            ? new PagedResult<T>(items, page, pageSize, totalCount: skip + items.Count)
+            : new PagedResult<T>(items, page, pageSize, hasNextPage);
     }
 
     private static async Task<PagedResult<T>> FetchAllAsync<T>(IQueryable<T> query, CancellationToken cancellationToken)

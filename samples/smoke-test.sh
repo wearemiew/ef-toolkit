@@ -107,4 +107,19 @@ check "feed: a cursor from another sort is a 400" \
 check "feed: after and before together is a 400" \
   '.status == 400 and (.errors | has("before"))' "/products/feed?after=$next&before=$next" 400
 
+# Auditing + soft delete. Runs last: it changes the data the checks above rely on.
+send() { # send <method> <path> → prints the status code; acts as user "smoke-tester"
+  curl -s -o /dev/null -w '%{http_code}' -X "$1" -H "X-User: smoke-tester" "$URL$2"
+}
+check "audit: seeded rows have creation stamps and no user" \
+  '.createdAt != null and .updatedAt == .createdAt and .createdBy == null and (.isDeleted | not)' "/products/95/audit"
+expect "audit: PATCH renames (204)" "$([[ $(send PATCH "/products/95?name=Renamed") == 204 ]] && echo true)"
+check "audit: update stamps updatedBy and keeps createdAt" \
+  '.name == "Renamed" and .updatedBy == "smoke-tester" and .updatedAt > .createdAt and .createdBy == null' "/products/95/audit"
+expect "soft delete: DELETE returns 204" "$([[ $(send DELETE /products/95) == 204 ]] && echo true)"
+check "soft delete: the row is hidden from lists" '.totalCount == 94 and ((.items | map(.id)) | index(95) == null)' "/products?pageSize=100"
+check "soft delete: the row is still in the table, flagged with who and when" \
+  '.isDeleted and .deletedBy == "smoke-tester" and .deletedAt != null and .name == "Renamed"' "/products/95/audit"
+expect "soft delete: a deleted row can't be deleted again (404)" "$([[ $(send DELETE /products/95) == 404 ]] && echo true)"
+
 if [[ $FAILED == 0 ]]; then echo "All smoke checks passed."; else echo "Some checks failed — app log: samples/sample.log"; exit 1; fi

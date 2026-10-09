@@ -1,6 +1,7 @@
 using System.Data.Common;
 using System.Globalization;
 using EntityFrameworkToolKit;
+using EntityFrameworkToolKit.Auditing;
 using EntityFrameworkToolKit.Filtering;
 using EntityFrameworkToolKit.Pagination;
 using EntityFrameworkToolKit.Sorting;
@@ -10,9 +11,14 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddScoped<DbCommandCounter>();
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddDbContext<ShopDbContext>((sp, options) => options
     .UseSqlite("Data Source=sample.db")
-    .AddInterceptors(sp.GetRequiredService<DbCommandCounter>()));
+    .AddInterceptors(sp.GetRequiredService<DbCommandCounter>())
+    // Stamps Created/Updated/Deleted At+By and turns deletes into soft deletes. The sample's "user" is the X-User
+    // header; a real API would read HttpContext.User. The delegate runs on every save, so it sees the current request.
+    .UseAuditing(currentUser: () =>
+        sp.GetRequiredService<IHttpContextAccessor>().HttpContext?.Request.Headers["X-User"].FirstOrDefault()));
 
 var app = builder.Build();
 
@@ -99,6 +105,33 @@ app.MapGet("/products/feed", ([AsParameters] CursorRequest request, ShopDbContex
         .ApplySort(request.Sort, ProductSorts.Map)
         .ToCursorPagedListAsync(request, ct));
 
+// Auditing + soft delete. PATCH /products/95?name=New and DELETE /products/95 (send an X-User header to see *By set).
+app.MapMethods("/products/{id:int}", ["PATCH"], async (int id, string name, ShopDbContext db, CancellationToken ct) =>
+{
+    var product = await db.Products.FindAsync([id], ct);
+    if (product is null)
+        return Results.NotFound();
+    product.Name = name;
+    await db.SaveChangesAsync(ct); // UpdatedAt/UpdatedBy are stamped
+    return Results.NoContent();
+});
+
+app.MapDelete("/products/{id:int}", async (int id, ShopDbContext db, CancellationToken ct) =>
+{
+    var product = await db.Products.FindAsync([id], ct);
+    if (product is null)
+        return Results.NotFound();
+    db.Products.Remove(product);
+    await db.SaveChangesAsync(ct); // an UPDATE setting IsDeleted, not a DELETE
+    return Results.NoContent();
+});
+
+// Every query hides deleted rows; IgnoreQueryFilters shows them (e.g. for an audit view or a restore).
+app.MapGet("/products/{id:int}/audit", async (int id, ShopDbContext db, CancellationToken ct) =>
+    await db.Products.IgnoreQueryFilters().AsNoTracking().SingleOrDefaultAsync(p => p.Id == id, ct) is { } product
+        ? Results.Ok(product)
+        : Results.NotFound());
+
 // Mistake on purpose: no OrderBy, so the library refuses to page it.
 app.MapGet("/products/unordered", (ShopDbContext db, CancellationToken ct) =>
     db.Products.ToPagedListAsync(1, 10, ct));
@@ -111,11 +144,18 @@ app.MapGet("/debug/sql", (ShopDbContext db, int page, int pageSize) => new
 
 app.Run();
 
-public sealed class Product
+public sealed class Product : IUserAuditable, IUserSoftDeletable
 {
     public int Id { get; set; }
     public string Name { get; set; } = "";
     public decimal Price { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public string? CreatedBy { get; set; }
+    public string? UpdatedBy { get; set; }
+    public bool IsDeleted { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public string? DeletedBy { get; set; }
 }
 
 public sealed record ProductSummary(int Id, string Label);
@@ -132,6 +172,9 @@ public static class ProductSorts
 public sealed class ShopDbContext(DbContextOptions<ShopDbContext> options) : DbContext(options)
 {
     public DbSet<Product> Products => Set<Product>();
+
+    // Last, so the soft-delete filter is combined with any other filters configured above.
+    protected override void OnModelCreating(ModelBuilder modelBuilder) => modelBuilder.ApplySoftDeleteQueryFilters();
 }
 
 /// <summary>Counts SQL commands executed within one request scope.</summary>

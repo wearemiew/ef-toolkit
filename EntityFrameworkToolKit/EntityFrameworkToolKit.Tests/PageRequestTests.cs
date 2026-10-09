@@ -89,4 +89,25 @@ public sealed class PageRequestTests : IDisposable
 
         await Assert.ThrowsAsync<InvalidQueryRequestException>(() => _db.Entities.OrderBy(e => e.Id).ToPagedListAsync(request));
     }
+
+    [Fact]
+    public async Task ToPagedListAsync_PageRequest_OptionsWithoutTotal_SkipsCount()
+    {
+        var options = new PagingOptions(defaultPageSize: 10, includeTotalCount: false);
+
+        var result = await _db.Entities.OrderBy(e => e.Id).ToPagedListAsync(new PageRequest(), options);
+
+        Assert.Equal(10, result.Items.Count);
+        Assert.Null(result.TotalCount);
+        Assert.True(result.HasNextPage);
+        var command = Assert.Single(_db.ExecutedCommands);
+        Assert.DoesNotContain("COUNT", command, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void PagingOptions_IncludesTotalCountByDefault()
+    {
+        Assert.True(PagingOptions.Default.IncludeTotalCount);
+        Assert.True(new PagingOptions().IncludeTotalCount);
+    }
 }

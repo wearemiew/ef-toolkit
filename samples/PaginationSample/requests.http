@@ -60,5 +60,23 @@ X-User: alice
 ### Audit view (IgnoreQueryFilters) — shows createdAt/updatedBy/isDeleted/deletedBy
 GET {{host}}/products/95/audit
 
+### Paging without the COUNT query — totalCount null, X-Db-Commands: 1
+GET {{host}}/products/fast?page=2&pageSize=10
+
+### Paging without the COUNT query — the last page still reports the total
+GET {{host}}/products/fast?page=10&pageSize=10
+
+### Get by id — FindOrNotFoundAsync
+GET {{host}}/products/7
+
+### Missing id — 404 "Product 4242 was not found."
+GET {{host}}/products/4242
+
+### Reprice in a transaction that fails — 500, no price changes
+POST {{host}}/products/reprice?percent=10&fail=true
+
+### Reprice in a transaction — every price changes, committed together
+POST {{host}}/products/reprice?percent=10
+
 ### Generated SQL
 GET {{host}}/debug/sql?page=3&pageSize=10

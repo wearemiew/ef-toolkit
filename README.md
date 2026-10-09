@@ -30,8 +30,8 @@ Extension methods on `IQueryable<T>` that run the query one page at a time and r
 | `Items` | The items on this page (`IReadOnlyList<T>`) |
 | `Page` | The 1-based page number |
 | `PageSize` | The maximum number of items per page |
-| `TotalCount` | The total number of items across all pages |
-| `TotalPages` | `ceil(TotalCount / PageSize)` |
+| `TotalCount` | The total number of items across all pages (`null` when [skipped](#skipping-the-total-count)) |
+| `TotalPages` | `ceil(TotalCount / PageSize)` (`null` when the total is skipped) |
 | `HasPreviousPage` / `HasNextPage` | Convenience flags for pagination controls |
 | `Map(selector)` | Projects the items (e.g. entities → DTOs), keeping the metadata |
 
@@ -87,6 +87,21 @@ app.MapGet("/products", (int page, int pageSize, ProductService service, Cancell
   "hasNextPage": true
 }
 ```
+
+### Skipping the total count
+
+The `COUNT` query is often the slowest part of a list endpoint, and infinite-scroll UIs never show it. Turn it off on the server side:
+
+```csharp
+static readonly PagingOptions FastPaging = new(includeTotalCount: false);
+
+app.MapGet("/products", ([AsParameters] PageRequest request, ShopDb db, CancellationToken ct) =>
+    db.Products.OrderBy(p => p.Id).ToPagedListAsync(request, FastPaging, ct));
+
+// or, from code: query.ToPagedListAsync(page, pageSize, includeTotalCount: false, ct)
+```
+
+Each page is then **one** query that fetches one extra row to set `hasNextPage`. `totalCount` and `totalPages` are `null`, except on the last page, where the total is known for free. Clients can't switch counting back on: it's a `PagingOptions` setting, never bound from the request. For deep pages on big tables, prefer [cursor pagination](#cursor-pagination), which also avoids the `OFFSET` scan.
 
 ## API helpers
 
@@ -213,6 +228,101 @@ Caveats:
 - **Avoid `Update()`/`Attach` with an entity built from a request:** it writes every column, so `IsDeleted = false` from the request would un-delete the row. The stored `CreatedAt` is kept, but the returned entity shows the request's value. Load the entity and copy the changes onto it.
 - In the save that soft-deletes a parent, changes to its tracked children look like EF's cascade, so they're undone. If you remove a non-soft-deletable child, or set an optional child's foreign key to null, save that change separately. Children *added* in the same save are discarded by EF as soon as you call `Remove(parent)`.
 - Implement the interface properties implicitly and keep them mapped (no `[NotMapped]`). `ApplySoftDeleteQueryFilters()` can safely be called more than once.
+
+## Transactions
+
+Run a unit of work all-or-nothing:
+
+```csharp
+using EntityFrameworkToolKit.Transactions;
+
+var paymentId = await db.ExecuteInTransactionAsync(async ct =>
+{
+    var order = await db.Orders.FindOrNotFoundAsync(orderId, ct);
+    order.Status = OrderStatus.Paid;
+    var payment = new Payment(order.Id, amount);
+    db.Payments.Add(payment);
+    await db.SaveChangesAsync(ct); // optional: pending changes are saved before the commit anyway
+    return payment.Id;
+}, cancellationToken);
+```
+
+- **Begins, saves, commits.** Pending changes are saved for you before the commit. Any exception rolls back and propagates unchanged.
+- **Works with retrying providers.** The unit runs through the context's execution strategy, so with `EnableRetryOnFailure` a transient failure retries the whole unit, instead of throwing because the strategy doesn't support user-initiated transactions. Before a retry the change tracker is cleared, so **load what you change inside the delegate**: it may run more than once, and entities loaded before the call are no longer tracked after a retry.
+- **A failure during commit is ambiguous.** If the connection drops while committing, the commit may have happened, and a retry would apply the work twice. When that matters (e.g. inserts without a natural key), pass `verifySucceeded`. It's asked after a retriable failure, and returning `true` ends without a retry (returning the failed attempt's result):
+
+  ```csharp
+  await db.ExecuteInTransactionAsync(
+      ct =>
+      {
+          db.Payments.Add(new Payment(paymentRef, amount));
+          return Task.CompletedTask;
+      },
+      verifySucceeded: ct => db.Payments.AsNoTracking().AnyAsync(p => p.Reference == paymentRef, ct),
+      cancellationToken);
+  ```
+- **Nests.** Inside an open transaction (yours or another `ExecuteInTransactionAsync`) the operation joins it: its changes are saved but not committed, and the outer caller decides.
+- Isolation levels aren't exposed, to keep the package free of `Microsoft.EntityFrameworkCore.Relational`. Use `Database.BeginTransactionAsync(IsolationLevel)` inside `CreateExecutionStrategy().ExecuteAsync(...)` when you need one.
+
+## Not-found helpers
+
+Skip the `if (entity is null) return NotFound();` in every "get by id":
+
+```csharp
+using EntityFrameworkToolKit.Querying;
+
+app.MapGet("/products/{id:int}", (int id, ShopDb db, CancellationToken ct) =>
+    db.Products.FindOrNotFoundAsync(id, ct));
+```
+
+| Helper | Returns | When nothing matches |
+|---|---|---|
+| `FindOrNotFoundAsync(key)` / `(keyValues[])` | The entity with that primary key. An already tracked instance is returned without a query | `EntityNotFoundException` with `EntityName` and `Key`: *"Product 5 was not found."* |
+| `FirstOrNotFoundAsync([predicate])` | The first item | `EntityNotFoundException`: *"No Product matched the query."* |
+| `SingleOrNotFoundAsync([predicate])` | The only item. More than one still throws `InvalidOperationException` | `EntityNotFoundException` |
+
+A matching `null` or `0` (e.g. after `Select(p => p.Price)`) is returned, not treated as "not found". After a `Select`, the message still names the entity the query starts from (*"No Product matched the query."*), never the projected type. For composite keys, pass `new object?[] { orderId, lineNo }`. Query filters apply, so a soft-deleted row is not found either. Map the exception to a 404 once; its message is safe to show to clients:
+
+```csharp
+catch (EntityNotFoundException ex)
+{
+    await Results.Problem(ex.Message, statusCode: StatusCodes.Status404NotFound).ExecuteAsync(context);
+}
+```
+
+## Testing your queries
+
+Test the queries that use these helpers against a real database engine, not mocked `IQueryable`s: in-memory LINQ accepts expressions that EF can't translate, and the EF Core in-memory provider has no transactions or SQL semantics. SQLite in-memory is fast and needs no server. This repository's own tests use this pattern (see `TestHelpers/TestDbContext.cs`):
+
+```csharp
+public sealed class ShopDbFixture : IDisposable
+{
+    private readonly SqliteConnection _connection = new("DataSource=:memory:");
+
+    public ShopDbFixture()
+    {
+        _connection.Open(); // the database lives as long as this connection
+        var options = new DbContextOptionsBuilder<ShopDb>()
+            .UseSqlite(_connection)
+            .AddInterceptors(new AuditingInterceptor(() => "test-user")) // if you use auditing
+            .Options;
+        Db = new ShopDb(options);
+        Db.Database.EnsureCreated();
+    }
+
+    public ShopDb Db { get; }
+
+    public void Dispose()
+    {
+        Db.Dispose();
+        _connection.Dispose();
+    }
+}
+```
+
+- Seed rows, then call `Db.ChangeTracker.Clear()`, so tests read from the database instead of getting tracked instances back.
+- To assert how many SQL commands ran (e.g. that a page skipped the `COUNT`), log them: `.LogTo(commands.Add, new[] { RelationalEventId.CommandExecuted })`.
+- SQLite differs from SQL Server and PostgreSQL in places (it can't `ORDER BY` a `decimal`, and compares strings by ordinal), so keep a few integration tests against your real provider.
 
 ## Migrating from 1.x
 

@@ -201,4 +201,70 @@ public sealed class PagedQueryableExtensionsTests : IDisposable
     {
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => Ordered.ToOptionalPagedListAsync(int.MaxValue, 100));
     }
+
+    [Fact]
+    public async Task ToPagedListAsync_WithoutTotal_RunsOneQuery_AndSetsHasNextPage()
+    {
+        var result = await Ordered.ToPagedListAsync(page: 2, pageSize: 10, includeTotalCount: false);
+
+        Assert.Equal(Enumerable.Range(11, 10), result.Items.Select(e => e.Id));
+        Assert.Null(result.TotalCount);
+        Assert.Null(result.TotalPages);
+        Assert.True(result.HasNextPage);
+        Assert.True(result.HasPreviousPage);
+        var command = Assert.Single(_db.ExecutedCommands);
+        Assert.DoesNotContain("COUNT", command, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData(3, 20, 10)]
+    [InlineData(5, 10, 10)]
+    public async Task ToPagedListAsync_WithoutTotal_LastPage_ReportsTotal(int page, int pageSize, int expectedItems)
+    {
+        var result = await Ordered.ToPagedListAsync(page, pageSize, includeTotalCount: false);
+
+        Assert.Equal(expectedItems, result.Items.Count);
+        Assert.Equal(50, result.TotalCount);
+        Assert.False(result.HasNextPage);
+        Assert.Single(_db.ExecutedCommands);
+    }
+
+    [Fact]
+    public async Task ToPagedListAsync_WithoutTotal_PageBeyondEnd_IsEmptyWithUnknownTotal()
+    {
+        var result = await Ordered.ToPagedListAsync(page: 10, pageSize: 10, includeTotalCount: false);
+
+        Assert.Empty(result.Items);
+        Assert.Null(result.TotalCount);
+        Assert.False(result.HasNextPage);
+    }
+
+    [Fact]
+    public async Task ToPagedListAsync_WithoutTotal_EmptyTable_ReportsZeroTotal()
+    {
+        using var empty = TestDbContext.CreateSeeded(0);
+
+        var result = await empty.Entities.OrderBy(e => e.Id).ToPagedListAsync(page: 1, pageSize: 10, includeTotalCount: false);
+
+        Assert.Empty(result.Items);
+        Assert.Equal(0, result.TotalCount);
+        Assert.False(result.HasNextPage);
+    }
+
+    [Fact]
+    public async Task ToPagedListAsync_WithoutTotal_StillValidatesAndRequiresOrdering()
+    {
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => Ordered.ToPagedListAsync(0, 10, includeTotalCount: false));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _db.Entities.ToPagedListAsync(1, 10, includeTotalCount: false));
+    }
+
+    [Fact]
+    public async Task ToPagedListAsync_WithoutTotal_MaxPageSize_DoesNotOverflow()
+    {
+        var result = await Ordered.ToPagedListAsync(page: 1, pageSize: int.MaxValue, includeTotalCount: false);
+
+        Assert.Equal(50, result.Items.Count);
+        Assert.Equal(50, result.TotalCount);
+        Assert.False(result.HasNextPage);
+    }
 }

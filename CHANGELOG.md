@@ -9,6 +9,7 @@ All notable changes to this project are documented in this file.
 - `AddPagination` → `ToPagedListAsync(int page, int pageSize, CancellationToken)`. Invalid `page`/`pageSize` now throws `ArgumentOutOfRangeException` instead of returning an empty result.
 - `AddOptionalPagination` → `ToOptionalPagedListAsync(int? page, int? pageSize, CancellationToken)`. The fallback (return everything when paging values are missing or invalid) is unchanged.
 - Paging an unordered query throws `InvalidOperationException`.
+- `PagedResult<T>.TotalCount` and `TotalPages` are `int?`: they are `null` when the total count is skipped.
 
 ### Fixed
 - The total count was lost when a paged result was serialized to JSON (the old type serialized as a bare array).
@@ -21,6 +22,10 @@ All notable changes to this project are documented in this file.
 - `SortMap<T>` and `ApplySort`: allow-listed, client-driven sorting (`?sort=-price,name`) with a stable tie-breaker.
 - Cursor (keyset) pagination: `CursorRequest`, `CursorPagedResult<T>` and `ToCursorPagedListAsync(CursorRequest[, PagingOptions])`. Pages read the sort keys from the query's own ordering (so it works with `ApplySort`), go forward (`after`) and backward (`before`), run one parameterized query each, and reject malformed or cross-sort cursors as `InvalidQueryRequestException`.
 - Auditing and soft delete (`EntityFrameworkToolKit.Auditing`): `IAuditable`/`IUserAuditable` and `ISoftDeletable`/`IUserSoftDeletable`, stamped by `AuditingInterceptor` (`UseAuditing(currentUser, timeProvider)`). `ApplySoftDeleteQueryFilters()` hides deleted rows while keeping existing query filters. Creation stamps can't be overwritten, and owned types survive a soft delete.
+- Optional total count: `PagingOptions(includeTotalCount: false)` and `ToPagedListAsync(page, pageSize, includeTotalCount, ct)` page in one query without `COUNT`. `PagedResult<T>.TotalCount`/`TotalPages` are then `null` (except on the last page) and `HasNextPage` comes from one extra fetched row.
+- `ExecuteInTransactionAsync` (`EntityFrameworkToolKit.Transactions`): runs a unit of work in a transaction through the context's execution strategy (retried as a whole with `EnableRetryOnFailure`), saves and commits it, rolls back on any exception, and joins an already open transaction. An optional `verifySucceeded` check avoids running the work twice when a commit fails ambiguously.
+- Not-found helpers (`EntityFrameworkToolKit.Querying`): `FindOrNotFoundAsync`, `FirstOrNotFoundAsync` and `SingleOrNotFoundAsync` throw `EntityNotFoundException` (`EntityName`, `Key`, a client-safe message) so APIs can map it to a 404 once.
+- README: "Testing your queries" describes the SQLite in-memory test pattern.
 - `WhereIf`: apply a filter only when a condition holds.
 - `InvalidQueryRequestException`: thrown only for bad client paging/sorting input, so APIs can map it to a 400 without masking server bugs.
 - Sample app (`samples/`) with a smoke test that exercises the packed package end to end.

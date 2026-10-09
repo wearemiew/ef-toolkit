@@ -1,0 +1,24 @@
+# GitVersion 6 — computes the package version from branch + history. Used by .github/workflows/ci.yml.
+#   dev  → prerelease, e.g. 2.1.0-dev.3 (published to GitHub Packages)
+#   main → stable,     e.g. 2.0.0       (published, tagged v2.0.0 and released)
+# Bumps follow Conventional Commits; `+semver: major|minor|patch|none` in a commit message still overrides.
+workflow: GitFlow/v1
+tag-prefix: '[vV]?'
+
+commit-message-incrementing: Enabled
+major-version-bump-message: '(^\w+(\([^)]*\))?!:)|(BREAKING CHANGE:)|(\+semver:\s?(breaking|major))'
+minor-version-bump-message: '(^feat(\([^)]*\))?:)|(\+semver:\s?(feature|minor))'
+patch-version-bump-message: '(^(fix|perf)(\([^)]*\))?:)|(\+semver:\s?(fix|patch))'
+no-bump-message: '\+semver:\s?(none|skip)'
+
+branches:
+  main:
+    regex: ^main$
+    label: ''
+    # Every commit on main is a release, so it gets a clean version (2.0.1, not 2.0.1-1).
+    mode: ContinuousDeployment
+    increment: Patch
+  develop:
+    regex: ^dev(elop)?(ment)?$
+    label: dev
+    increment: Minor

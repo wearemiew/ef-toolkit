@@ -46,6 +46,9 @@ GET {{host}}/products/feed?pageSize=10&after=PASTE_NEXT_CURSOR
 ### Cursor feed — previous page
 GET {{host}}/products/feed?pageSize=10&before=PASTE_PREVIOUS_CURSOR
 
+### Cursor feed — poll for newer rows after the last page (pass endCursor; empty until rows are added)
+GET {{host}}/products/feed?pageSize=10&after=PASTE_END_CURSOR
+
 ### Cursor feed sorted by price — a cursor only works with the sort it came from
 GET {{host}}/products/feed?pageSize=10&sort=-price
 

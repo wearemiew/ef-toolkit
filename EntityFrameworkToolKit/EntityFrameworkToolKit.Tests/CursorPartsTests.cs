@@ -82,24 +82,39 @@ public class CursorPartsTests
     }
 
     [Fact]
-    public void Result_ValidatesAndDerivesFlags()
+    public void Result_ValidatesAndDerivesCursors()
     {
-        Assert.Throws<ArgumentNullException>(() => new CursorPagedResult<int>(null!, 1, null, null));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new CursorPagedResult<int>(new[] { 1 }, 0, null, null));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new CursorPagedResult<int>(new[] { 1, 2 }, 1, null, null));
+        Assert.Throws<ArgumentNullException>(() => new CursorPagedResult<int>(null!, 1, null, null, false, false));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new CursorPagedResult<int>(new[] { 1 }, 0, "s", "e", false, false));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new CursorPagedResult<int>(new[] { 1, 2 }, 1, "s", "e", false, false));
+        Assert.Throws<ArgumentException>(() => new CursorPagedResult<int>(new[] { 1 }, 5, null, "e", hasPreviousPage: true, hasNextPage: false));
+        Assert.Throws<ArgumentException>(() => new CursorPagedResult<int>(new[] { 1 }, 5, "s", null, hasPreviousPage: false, hasNextPage: true));
 
-        var result = new CursorPagedResult<int>(new[] { 1, 2 }, 5, "next", null);
+        var last = new CursorPagedResult<int>(new[] { 1, 2 }, 5, "s", "e", hasPreviousPage: true, hasNextPage: false);
 
-        Assert.True(result.HasNextPage);
-        Assert.False(result.HasPreviousPage);
+        Assert.Equal(("s", null, "s", "e"), (last.PreviousCursor, last.NextCursor, last.StartCursor, last.EndCursor));
     }
 
     [Fact]
-    public void Result_Map_KeepsCursors()
+    public void Result_Map_KeepsCursorsAndFlags()
     {
-        var mapped = new CursorPagedResult<int>(new[] { 1, 2 }, 5, "next", "prev").Map(i => i * 10);
+        var mapped = new CursorPagedResult<int>(new[] { 1, 2 }, 5, "s", "e", hasPreviousPage: false, hasNextPage: true).Map(i => i * 10);
 
         Assert.Equal(new[] { 10, 20 }, mapped.Items);
-        Assert.Equal((5, "next", "prev"), (mapped.PageSize, mapped.NextCursor, mapped.PreviousCursor));
+        Assert.Equal((5, "s", "e", false, true), (mapped.PageSize, mapped.StartCursor, mapped.EndCursor, mapped.HasPreviousPage, mapped.HasNextPage));
+    }
+
+    [Fact]
+    public void Result_Json_RoundTripsCursorsAndFlags()
+    {
+        var options = new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web);
+        var original = new CursorPagedResult<int>(new[] { 1, 2 }, 5, "s", "e", hasPreviousPage: true, hasNextPage: false);
+
+        var json = System.Text.Json.JsonSerializer.Serialize(original, options);
+        var copy = System.Text.Json.JsonSerializer.Deserialize<CursorPagedResult<int>>(json, options)!;
+
+        Assert.Contains("\"endCursor\":\"e\"", json);
+        Assert.Contains("\"nextCursor\":null", json);
+        Assert.Equal(("s", "e", true, false, "s", null), (copy.StartCursor, copy.EndCursor, copy.HasPreviousPage, copy.HasNextPage, copy.PreviousCursor, copy.NextCursor));
     }
 }

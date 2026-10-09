@@ -15,22 +15,35 @@ public sealed class CursorPagedResult<T>
     /// </summary>
     /// <param name="items">The items on this page.</param>
     /// <param name="pageSize">The maximum number of items per page.</param>
-    /// <param name="nextCursor">The cursor of the next page, or <see langword="null"/> when this is the last page.</param>
-    /// <param name="previousCursor">The cursor of the previous page, or <see langword="null"/> when this is the first page.</param>
+    /// <param name="startCursor">The cursor of the first item, or <see langword="null"/> when the page is empty.</param>
+    /// <param name="endCursor">The cursor of the last item, or <see langword="null"/> when the page is empty.</param>
+    /// <param name="hasPreviousPage">Whether a page exists before this one.</param>
+    /// <param name="hasNextPage">Whether a page exists after this one.</param>
     /// <exception cref="ArgumentNullException"><paramref name="items"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <paramref name="pageSize"/> is less than 1, or <paramref name="items"/> holds more than <paramref name="pageSize"/> items.
     /// </exception>
-    public CursorPagedResult(IReadOnlyList<T> items, int pageSize, string? nextCursor, string? previousCursor)
+    /// <exception cref="ArgumentException">
+    /// A neighbouring page is flagged without the cursor that reaches it (<paramref name="startCursor"/> for the
+    /// previous page, <paramref name="endCursor"/> for the next).
+    /// </exception>
+    public CursorPagedResult(
+        IReadOnlyList<T> items, int pageSize, string? startCursor, string? endCursor, bool hasPreviousPage, bool hasNextPage)
     {
         ArgumentNullException.ThrowIfNull(items);
         ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1);
         if (items.Count > pageSize)
             throw new ArgumentOutOfRangeException(nameof(items), items.Count, $"A page of size {pageSize} cannot hold {items.Count} items.");
+        if (hasPreviousPage && startCursor is null)
+            throw new ArgumentException("A previous page needs a start cursor to reach it.", nameof(startCursor));
+        if (hasNextPage && endCursor is null)
+            throw new ArgumentException("A next page needs an end cursor to reach it.", nameof(endCursor));
         Items = items;
         PageSize = pageSize;
-        NextCursor = nextCursor;
-        PreviousCursor = previousCursor;
+        StartCursor = startCursor;
+        EndCursor = endCursor;
+        HasPreviousPage = hasPreviousPage;
+        HasNextPage = hasNextPage;
     }
 
     /// <summary>The items on this page.</summary>
@@ -40,26 +53,39 @@ public sealed class CursorPagedResult<T>
     public int PageSize { get; }
 
     /// <summary>Pass as <see cref="CursorRequest.After"/> to get the next page; <see langword="null"/> on the last page.</summary>
-    public string? NextCursor { get; }
+    public string? NextCursor => HasNextPage ? EndCursor : null;
 
     /// <summary>Pass as <see cref="CursorRequest.Before"/> to get the previous page; <see langword="null"/> on the first page.</summary>
-    public string? PreviousCursor { get; }
+    public string? PreviousCursor => HasPreviousPage ? StartCursor : null;
+
+    /// <summary>
+    /// The cursor of the first item, even on the first page; <see langword="null"/> only when the page is empty.
+    /// Pass it as <see cref="CursorRequest.Before"/> later to check for items inserted before it.
+    /// </summary>
+    public string? StartCursor { get; }
+
+    /// <summary>
+    /// The cursor of the last item, even on the last page; <see langword="null"/> only when the page is empty.
+    /// Keep it to resume or poll later (sync jobs, "load newer"): <c>after = page.EndCursor ?? after</c>.
+    /// </summary>
+    public string? EndCursor { get; }
 
     /// <summary>Whether a page exists after this one.</summary>
-    public bool HasNextPage => NextCursor is not null;
+    public bool HasNextPage { get; }
 
     /// <summary>Whether a page exists before this one.</summary>
-    public bool HasPreviousPage => PreviousCursor is not null;
+    public bool HasPreviousPage { get; }
 
     /// <summary>
     /// Projects each item into a new form, keeping the page size and cursors (e.g. entities to DTOs).
     /// </summary>
     /// <typeparam name="TResult">The type of the projected items.</typeparam>
     /// <param name="selector">The projection applied to each item.</param>
-    /// <returns>A result with the projected items and the same <see cref="PageSize"/> and cursors.</returns>
+    /// <returns>A result with the projected items and the same <see cref="PageSize"/>, cursors and flags.</returns>
     public CursorPagedResult<TResult> Map<TResult>(Func<T, TResult> selector)
     {
         ArgumentNullException.ThrowIfNull(selector);
-        return new CursorPagedResult<TResult>(Items.Select(selector).ToList(), PageSize, NextCursor, PreviousCursor);
+        return new CursorPagedResult<TResult>(
+            Items.Select(selector).ToList(), PageSize, StartCursor, EndCursor, HasPreviousPage, HasNextPage);
     }
 }

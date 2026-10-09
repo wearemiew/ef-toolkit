@@ -146,9 +146,17 @@ app.MapGet("/products/feed", ([AsParameters] CursorRequest request, ShopDb db, C
   "pageSize": 20,
   "nextCursor": "eyJzIjoi…",
   "previousCursor": "eyJzIjoi…",
+  "startCursor": "eyJzIjoi…",
+  "endCursor": "eyJzIjoi…",
   "hasNextPage": true,
   "hasPreviousPage": true
 }
+```
+
+`nextCursor`/`previousCursor` are `null` at the ends of the data. `startCursor`/`endCursor` (the cursors of the first and last item, as in GraphQL Relay's `PageInfo`) are always set on a non-empty page, so a client that reaches the end keeps its position. Sync jobs, "load newer" and feed tailing poll with it:
+
+```csharp
+after = page.EndCursor ?? after; // an empty page has no cursors: keep the one you sent
 ```
 
 Rules:
@@ -159,7 +167,7 @@ Rules:
 - The filter is `k1 >= v1 AND (k1 > v1 OR (k1 = v1 AND k2 > v2) …)`, with plain `>`/`<` on the columns for strings and `Guid`s too (checked on SQLite, SQL Server and PostgreSQL), so it follows the database's collation and type ordering exactly as `ORDER BY` does, and the leading range lets the database seek an index on `(k1, k2, …)`. Add that index for large tables.
 - There's no total count or page number: that's the trade-off for constant-time pages. Use `ToPagedListAsync` when the UI needs "page 3 of 10".
 
-Cursors are opaque base64url strings. They aren't signed, so they're validated strictly instead. A malformed or edited cursor, a cursor from a different sort, or `after` and `before` together all throw `InvalidQueryRequestException` (`ParamName` `after` or `before`), which maps to a 400. Values only ever reach the database as SQL parameters. A cursor stops working when the sort it was made for changes (for example after a deploy that changes the sort keys); the client then gets a 400 and starts over from the first page. An empty page (because the rows around the cursor were deleted) has no cursors.
+Cursors are opaque base64url strings. They aren't signed, so they're validated strictly instead. A malformed or edited cursor, a cursor from a different sort, or `after` and `before` together all throw `InvalidQueryRequestException` (`ParamName` `after` or `before`), which maps to a 400. Values only ever reach the database as SQL parameters. A cursor stops working when the sort it was made for changes (for example after a deploy that changes the sort keys); the client then gets a 400 and starts over from the first page. An empty page (nothing new yet, or the rows around the cursor were deleted) has no cursors.
 
 ## Auditing and soft delete
 

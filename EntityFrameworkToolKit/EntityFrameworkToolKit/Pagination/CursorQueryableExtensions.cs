@@ -85,7 +85,9 @@ public static class CursorQueryableExtensions
             items.Reverse();
 
         // Coming from a cursor means a row exists on that side. An empty page (the rows around the cursor were
-        // deleted, or nothing matches) has no row to point from, so it has no cursors: the client starts over.
+        // deleted, or nothing matches) has no row to point from, so it has no cursors: the client starts over, or
+        // keeps the cursor it sent. A non-empty page always has start and end cursors, even at the ends of the data,
+        // so a client can resume from there later.
         var hasNext = items.Count > 0 && (backward || hasMore);
         var hasPrevious = items.Count > 0 && (backward ? hasMore : position is not null);
         string Boundary(T item) => CursorCodec.Encode(ordering.Fingerprint, ordering.ReadKeys(item), types);
@@ -93,7 +95,9 @@ public static class CursorQueryableExtensions
         return new CursorPagedResult<T>(
             items,
             pageSize,
-            nextCursor: hasNext ? Boundary(items[^1]) : null,
-            previousCursor: hasPrevious ? Boundary(items[0]) : null);
+            startCursor: items.Count > 0 ? Boundary(items[0]) : null,
+            endCursor: items.Count > 0 ? Boundary(items[^1]) : null,
+            hasPreviousPage: hasPrevious,
+            hasNextPage: hasNext);
     }
 }

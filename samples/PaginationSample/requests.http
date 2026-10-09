@@ -1,0 +1,29 @@
+# Open in Rider / VS Code (REST Client) while the sample runs (./samples/run.sh).
+@host = http://localhost:5080
+
+### Page 2 of 10 — note the X-Db-Commands: 2 header (page + COUNT)
+GET {{host}}/products?page=2&pageSize=10
+
+### Last, partial page — X-Db-Commands: 1 (COUNT skipped)
+GET {{host}}/products?page=10&pageSize=10
+
+### Past the end — empty items, totalCount still 95
+GET {{host}}/products?page=50&pageSize=10
+
+### Invalid input — 400 ProblemDetails
+GET {{host}}/products?page=0&pageSize=10
+
+### Optional paging without parameters — every row as one page
+GET {{host}}/products/optional
+
+### Optional paging with parameters
+GET {{host}}/products/optional?page=1&pageSize=5
+
+### Projection + Map
+GET {{host}}/products/summaries?page=1&pageSize=3
+
+### Unordered query — 500 explaining OrderBy is required
+GET {{host}}/products/unordered
+
+### Generated SQL
+GET {{host}}/debug/sql?page=3&pageSize=10

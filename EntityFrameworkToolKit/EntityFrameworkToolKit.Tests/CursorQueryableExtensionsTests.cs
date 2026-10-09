@@ -101,6 +101,54 @@ public sealed class CursorQueryableExtensionsTests : IDisposable
         Assert.Empty(empty.Items);
         Assert.False(empty.HasPreviousPage);
         Assert.False(empty.HasNextPage);
+        Assert.Null(empty.StartCursor);
+        Assert.Null(empty.EndCursor);
+    }
+
+    [Fact]
+    public async Task FirstAndLastPages_KeepStartAndEndCursors()
+    {
+        var query = Sorts["id"](_db.CursorEntities);
+
+        var first = await query.ToCursorPagedListAsync(new CursorRequest { PageSize = 50 });
+        var last = await query.ToCursorPagedListAsync(new CursorRequest { After = first.NextCursor, PageSize = 50 });
+
+        Assert.Null(first.PreviousCursor);
+        Assert.NotNull(first.StartCursor);
+        Assert.Equal(new[] { 51, 52, 53 }, last.Items.Select(e => e.Id));
+        Assert.Null(last.NextCursor);
+        Assert.False(last.HasNextPage);
+        Assert.NotNull(last.EndCursor);
+        Assert.Equal(last.PreviousCursor, last.StartCursor);
+    }
+
+    [Fact]
+    public async Task EndCursorOfLastPage_FindsRowsAddedLater()
+    {
+        var query = Sorts["id"](_db.CursorEntities);
+        var last = await query.ToCursorPagedListAsync(new CursorRequest { After = (await query.ToCursorPagedListAsync(new CursorRequest { PageSize = 50 })).NextCursor });
+
+        var nothingNew = await query.ToCursorPagedListAsync(new CursorRequest { After = last.EndCursor });
+        _db.CursorEntities.AddRange(new CursorEntity { Id = Count + 1, Name = "a" }, new CursorEntity { Id = Count + 2, Name = "b" });
+        await _db.SaveChangesAsync();
+        var newer = await query.ToCursorPagedListAsync(new CursorRequest { After = last.EndCursor });
+
+        Assert.Empty(nothingNew.Items);
+        Assert.Null(nothingNew.EndCursor); // the client keeps its cursor: after = page.EndCursor ?? after
+        Assert.Equal(new[] { Count + 1, Count + 2 }, newer.Items.Select(e => e.Id));
+    }
+
+    [Fact]
+    public async Task StartCursorOfFirstPage_FindsRowsAddedBefore()
+    {
+        var query = Sorts["id desc"](_db.CursorEntities);
+        var first = await query.ToCursorPagedListAsync(new CursorRequest { PageSize = 10 });
+        _db.CursorEntities.Add(new CursorEntity { Id = Count + 1, Name = "newest" });
+        await _db.SaveChangesAsync();
+
+        var newer = await query.ToCursorPagedListAsync(new CursorRequest { Before = first.StartCursor });
+
+        Assert.Equal(new[] { Count + 1 }, newer.Items.Select(e => e.Id));
     }
 
     [Fact]

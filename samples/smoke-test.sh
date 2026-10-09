@@ -106,5 +106,10 @@ check "feed: a cursor from another sort is a 400" \
   '.status == 400 and (.detail | test("different sort"))' "/products/feed?after=$next&sort=-price" 400
 check "feed: after and before together is a 400" \
   '.status == 400 and (.errors | has("before"))' "/products/feed?after=$next&before=$next" 400
+end_cursor=$(curl -s "$URL/products/feed?pageSize=10&after=$after_90" | jq -r .endCursor)
+check "feed: the last page keeps an endCursor but no nextCursor" \
+  '.nextCursor == null and (.hasNextPage | not) and (.endCursor | type) == "string"' "/products/feed?pageSize=10&after=$after_90" 200 1
+check "feed: polling after the endCursor of the last page is empty" \
+  '(.items | length) == 0 and .endCursor == null' "/products/feed?after=$end_cursor" 200 1
 
 if [[ $FAILED == 0 ]]; then echo "All smoke checks passed."; else echo "Some checks failed — app log: samples/sample.log"; exit 1; fi

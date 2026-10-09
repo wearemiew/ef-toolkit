@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace EntityFrameworkToolKit.Tests.TestHelpers;
 
@@ -23,16 +24,25 @@ public sealed class TestDbContext : DbContext
     public List<string> ExecutedCommands { get; }
 
     /// <summary>
-    /// Creates a context over a fresh in-memory SQLite database seeded with <paramref name="count"/> entities (Id 1..count).
+    /// Creates a context over a fresh in-memory SQLite database seeded with <paramref name="count"/> entities (Id 1..count),
+    /// optionally with a custom execution strategy and interceptors.
     /// </summary>
-    public static TestDbContext CreateSeeded(int count = 50)
+    public static TestDbContext CreateSeeded(
+        int count = 50,
+        Func<ExecutionStrategyDependencies, IExecutionStrategy>? executionStrategy = null,
+        params IInterceptor[] interceptors)
     {
         var connection = new SqliteConnection("DataSource=:memory:");
         connection.Open();
         var commands = new List<string>();
         var options = new DbContextOptionsBuilder<TestDbContext>()
-            .UseSqlite(connection)
+            .UseSqlite(connection, sqlite =>
+            {
+                if (executionStrategy is not null)
+                    sqlite.ExecutionStrategy(executionStrategy);
+            })
             .LogTo(commands.Add, new[] { RelationalEventId.CommandExecuted })
+            .AddInterceptors(interceptors)
             .Options;
 
         var context = new TestDbContext(connection, options, commands);

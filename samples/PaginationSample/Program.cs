@@ -4,7 +4,9 @@ using EntityFrameworkToolKit;
 using EntityFrameworkToolKit.Auditing;
 using EntityFrameworkToolKit.Filtering;
 using EntityFrameworkToolKit.Pagination;
+using EntityFrameworkToolKit.Querying;
 using EntityFrameworkToolKit.Sorting;
+using EntityFrameworkToolKit.Transactions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 
@@ -41,6 +43,10 @@ app.Use(async (context, next) =>
     {
         await next();
     }
+    catch (EntityNotFoundException ex) // from the …OrNotFoundAsync helpers; the message is safe to report
+    {
+        await Results.Problem(ex.Message, statusCode: StatusCodes.Status404NotFound).ExecuteAsync(context);
+    }
     catch (InvalidQueryRequestException ex) // bad ?page / ?pageSize / ?sort: the client's fault, safe to report
     {
         await Results.ValidationProblem(
@@ -72,6 +78,12 @@ using (var scope = app.Services.CreateScope())
 // and throws ArgumentOutOfRangeException, which is a server bug (→ 500).
 app.MapGet("/products", ([AsParameters] PageRequest request, ShopDbContext db, CancellationToken ct) =>
     db.Products.OrderBy(p => p.Id).ToPagedListAsync(request, ct));
+
+// Paging without the COUNT query, for infinite scroll or huge tables: one SQL command per page. totalCount is null
+// (hasNextPage still works) except on the last page, where it is known for free. GET /products/fast?page=2&pageSize=10
+var fastPaging = new PagingOptions(includeTotalCount: false);
+app.MapGet("/products/fast", ([AsParameters] PageRequest request, ShopDbContext db, CancellationToken ct) =>
+    db.Products.OrderBy(p => p.Id).ToPagedListAsync(request, fastPaging, ct));
 
 // Optional paging: GET /products/optional (everything) or ?page=1&pageSize=5
 app.MapGet("/products/optional", (ShopDbContext db, int? page, int? pageSize, CancellationToken ct) =>
@@ -105,12 +117,14 @@ app.MapGet("/products/feed", ([AsParameters] CursorRequest request, ShopDbContex
         .ApplySort(request.Sort, ProductSorts.Map)
         .ToCursorPagedListAsync(request, ct));
 
+// Get by id without the null check: a missing (or soft-deleted) id throws EntityNotFoundException → 404.
+app.MapGet("/products/{id:int}", (int id, ShopDbContext db, CancellationToken ct) =>
+    db.Products.FindOrNotFoundAsync(id, ct));
+
 // Auditing + soft delete. PATCH /products/95?name=New and DELETE /products/95 (send an X-User header to see *By set).
 app.MapMethods("/products/{id:int}", ["PATCH"], async (int id, string name, ShopDbContext db, CancellationToken ct) =>
 {
-    var product = await db.Products.FindAsync([id], ct);
-    if (product is null)
-        return Results.NotFound();
+    var product = await db.Products.FindOrNotFoundAsync(id, ct);
     product.Name = name;
     await db.SaveChangesAsync(ct); // UpdatedAt/UpdatedBy are stamped
     return Results.NoContent();
@@ -118,9 +132,7 @@ app.MapMethods("/products/{id:int}", ["PATCH"], async (int id, string name, Shop
 
 app.MapDelete("/products/{id:int}", async (int id, ShopDbContext db, CancellationToken ct) =>
 {
-    var product = await db.Products.FindAsync([id], ct);
-    if (product is null)
-        return Results.NotFound();
+    var product = await db.Products.FindOrNotFoundAsync(id, ct);
     db.Products.Remove(product);
     await db.SaveChangesAsync(ct); // an UPDATE setting IsDeleted, not a DELETE
     return Results.NoContent();
@@ -131,6 +143,21 @@ app.MapGet("/products/{id:int}/audit", async (int id, ShopDbContext db, Cancella
     await db.Products.IgnoreQueryFilters().AsNoTracking().SingleOrDefaultAsync(p => p.Id == id, ct) is { } product
         ? Results.Ok(product)
         : Results.NotFound());
+
+// All-or-nothing bulk update: POST /products/reprice?percent=10. The changes are saved and committed together;
+// &fail=true throws after saving, so the transaction rolls back and no price changes (→ 500).
+app.MapPost("/products/reprice", async (int percent, bool? fail, ShopDbContext db, CancellationToken ct) =>
+{
+    await db.ExecuteInTransactionAsync(async ct =>
+    {
+        foreach (var product in await db.Products.ToListAsync(ct))
+            product.Price = product.Price * (100 + percent) / 100;
+        await db.SaveChangesAsync(ct);
+        if (fail == true)
+            throw new InvalidOperationException("Repricing failed on purpose; the transaction was rolled back.");
+    }, ct);
+    return Results.NoContent();
+});
 
 // Mistake on purpose: no OrderBy, so the library refuses to page it.
 app.MapGet("/products/unordered", (ShopDbContext db, CancellationToken ct) =>

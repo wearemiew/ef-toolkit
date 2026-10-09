@@ -81,4 +81,50 @@ public class PagedResultTests
         Assert.Equal(hasPrevious, result.HasPreviousPage);
         Assert.Equal(hasNext, result.HasNextPage);
     }
+
+    [Fact]
+    public void UnknownTotal_SerializesNullTotals()
+    {
+        var result = new PagedResult<int>(new[] { 1, 2 }, page: 2, pageSize: 2, hasNextPage: true);
+
+        var json = JsonSerializer.Serialize(result, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        Assert.Equal(
+            """{"items":[1,2],"page":2,"pageSize":2,"totalCount":null,"totalPages":null,"hasPreviousPage":true,"hasNextPage":true}""",
+            json);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void UnknownTotal_Deserialize_RoundTripsHasNextPage(bool hasNextPage)
+    {
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var original = new PagedResult<int>(new[] { 1, 2 }, page: 2, pageSize: 2, hasNextPage);
+
+        var copy = JsonSerializer.Deserialize<PagedResult<int>>(JsonSerializer.Serialize(original, options), options)!;
+
+        Assert.Equal(original.Items, copy.Items);
+        Assert.Null(copy.TotalCount);
+        Assert.Equal(hasNextPage, copy.HasNextPage);
+    }
+
+    [Theory]
+    [InlineData(0, 10)]
+    [InlineData(1, 0)]
+    public void UnknownTotal_Constructor_InvalidMetadata_Throws(int page, int pageSize)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new PagedResult<int>(Array.Empty<int>(), page, pageSize, hasNextPage: false));
+    }
+
+    [Fact]
+    public void UnknownTotal_Map_KeepsHasNextPage()
+    {
+        var result = new PagedResult<int>(new[] { 1, 2 }, page: 3, pageSize: 2, hasNextPage: true);
+
+        var mapped = result.Map(x => x * 10);
+
+        Assert.Equal(new[] { 10, 20 }, mapped.Items);
+        Assert.Equal((3, 2, (int?)null, true), (mapped.Page, mapped.PageSize, mapped.TotalCount, mapped.HasNextPage));
+    }
 }

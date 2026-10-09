@@ -68,6 +68,14 @@ check "unknown sort field is a 400 listing allowed fields" \
 check "invalid page in PageRequest is a 400" '.status == 400' "/products/search?page=0" 400
 check "double sign in sort is rejected" '.status == 400' "/products/search?sort=--price" 400
 check "a server bug is NOT reported as a bad request" - "/products/summaries?page=0&pageSize=5" 500
+check "fast paging: no total, one SQL command, hasNextPage set" \
+  '(.items | map(.id)) == [11,12,13,14,15,16,17,18,19,20] and .totalCount == null and .totalPages == null and .hasNextPage' \
+  "/products/fast?page=2&pageSize=10" 200 1
+check "fast paging: the last page reports the total" \
+  '(.items | length) == 5 and .totalCount == 95 and .totalPages == 10 and (.hasNextPage | not)' "/products/fast?page=10&pageSize=10" 200 1
+check "get by id returns the product" '.id == 7 and .name == "Product 007"' "/products/7" 200 1
+check "missing id is a 404 naming the product and key" \
+  '.status == 404 and .detail == "Product 4242 was not found."' "/products/4242" 404
 
 # Cursor feed: follow the cursors through the whole table in both directions, one SQL command per page.
 walk() { # walk <query> <cursor param> <cursor field> [start cursor] → prints the ids in visiting order, one page per line
@@ -121,5 +129,13 @@ check "soft delete: the row is hidden from lists" '.totalCount == 94 and ((.item
 check "soft delete: the row is still in the table, flagged with who and when" \
   '.isDeleted and .deletedBy == "smoke-tester" and .deletedAt != null and .name == "Renamed"' "/products/95/audit"
 expect "soft delete: a deleted row can't be deleted again (404)" "$([[ $(send DELETE /products/95) == 404 ]] && echo true)"
+check "soft delete: get by id hides the deleted row (404)" '.status == 404' "/products/95" 404
+
+# Transactions: a failing unit changes nothing; a successful one commits every row.
+expect "transaction: a failing reprice is a 500" "$([[ $(send POST "/products/reprice?percent=10&fail=true") == 500 ]] && echo true)"
+check "transaction: the failed reprice was rolled back" '.price == 11' "/products/1"
+expect "transaction: a reprice commits (204)" "$([[ $(send POST "/products/reprice?percent=10") == 204 ]] && echo true)"
+check "transaction: every price changed" '.price == 12.1' "/products/1"
+check "transaction: the last row changed too" '.price == 114.4' "/products/94"
 
 if [[ $FAILED == 0 ]]; then echo "All smoke checks passed."; else echo "Some checks failed — app log: samples/sample.log"; exit 1; fi

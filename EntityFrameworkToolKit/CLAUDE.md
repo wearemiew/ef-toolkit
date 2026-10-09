@@ -22,3 +22,4 @@
 - Keep helpers as extension methods over `IQueryable<T>`; no base classes, no DI registration.
 - Anything that takes client input (sort names, page sizes) must be allow-listed or clamped by a server-side type (`SortMap<T>`, `PagingOptions`) that is never bound from the request.
 - Internal helpers (e.g. `PaginationGuard`) stay `internal`; tests reach them via `InternalsVisibleTo`.
+- Cursor pagination internals live in `Pagination/Cursors/`, one job each: `CursorOrdering` reads and rebuilds the sort, `KeysetPredicateBuilder` builds the "after this row" filter, `CursorCodec` encodes and strictly decodes cursors. Values in generated expressions must stay parameterized (captured, never `Expression.Constant` of the value).

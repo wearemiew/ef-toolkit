@@ -37,5 +37,17 @@ GET {{host}}/products/search?pageSize=500
 ### Unknown sort field — 400 listing the allowed fields
 GET {{host}}/products/search?sort=secret
 
+### Cursor feed — first page; copy nextCursor into the next request
+GET {{host}}/products/feed?pageSize=10
+
+### Cursor feed — next page
+GET {{host}}/products/feed?pageSize=10&after=PASTE_NEXT_CURSOR
+
+### Cursor feed — previous page
+GET {{host}}/products/feed?pageSize=10&before=PASTE_PREVIOUS_CURSOR
+
+### Cursor feed sorted by price — a cursor only works with the sort it came from
+GET {{host}}/products/feed?pageSize=10&sort=-price
+
 ### Generated SQL
 GET {{host}}/debug/sql?page=3&pageSize=10

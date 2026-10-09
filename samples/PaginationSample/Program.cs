@@ -92,6 +92,13 @@ app.MapGet("/products/search", ([AsParameters] PageRequest request, string? sear
         .ApplySort(request.Sort, ProductSorts.Map)
         .ToPagedListAsync(request, ct));
 
+// Cursor (keyset) paging for feeds and infinite scroll: one query per page, fast at any depth.
+// GET /products/feed?pageSize=10, then ?after=<nextCursor> or ?before=<previousCursor>; &sort=-price works too.
+app.MapGet("/products/feed", ([AsParameters] CursorRequest request, ShopDbContext db, CancellationToken ct) =>
+    db.Products
+        .ApplySort(request.Sort, ProductSorts.Map)
+        .ToCursorPagedListAsync(request, ct));
+
 // Mistake on purpose: no OrderBy, so the library refuses to page it.
 app.MapGet("/products/unordered", (ShopDbContext db, CancellationToken ct) =>
     db.Products.ToPagedListAsync(1, 10, ct));

@@ -69,4 +69,42 @@ check "invalid page in PageRequest is a 400" '.status == 400' "/products/search?
 check "double sign in sort is rejected" '.status == 400' "/products/search?sort=--price" 400
 check "a server bug is NOT reported as a bad request" - "/products/summaries?page=0&pageSize=5" 500
 
+# Cursor feed: follow the cursors through the whole table in both directions, one SQL command per page.
+walk() { # walk <query> <cursor param> <cursor field> [start cursor] → prints the ids in visiting order, one page per line
+  local query=$1 param=$2 field=$3 cursor=${4:-} headers body pages=0
+  while :; do
+    headers=$(mktemp)
+    body=$(curl -s -D "$headers" "$URL/products/feed?$query${cursor:+&$param=$cursor}")
+    [[ $(awk -F': ' 'tolower($1)=="x-db-commands"{gsub("\r","",$2); print $2}' "$headers") == 1 ]] || echo "MORE_THAN_ONE_QUERY"
+    rm -f "$headers"
+    jq -c '[.items[].id]' <<<"$body"
+    cursor=$(jq -r ".$field // empty" <<<"$body")
+    pages=$((pages + 1))
+    [[ -n $cursor && $pages -lt 100 ]] || break
+  done
+}
+expect() { # expect <description> <condition result>
+  if [[ $2 == true ]]; then echo "  PASS  $1"; else echo "  FAIL  $1"; FAILED=1; fi
+}
+
+forward=$(walk "pageSize=10" after nextCursor)
+expect "feed: forward walk visits ids 1..95 once, in 10 pages" "$(jq -s 'add == [range(1;96)] and length == 10' <<<"$forward" 2>/dev/null)"
+expect "feed: every forward page runs exactly 1 SQL command" "$([[ $forward != *MORE_THAN_ONE_QUERY* ]] && echo true)"
+after_90=$(curl -s "$URL/products/feed?pageSize=90" | jq -r .nextCursor)
+last_page_previous=$(curl -s "$URL/products/feed?pageSize=10&after=$after_90" | jq -r .previousCursor)
+backward=$(walk "pageSize=10" before previousCursor "$last_page_previous")
+expect "feed: backward walk from the last page visits ids 90..1 in 9 pages" \
+  "$(jq -s 'reverse | add == [range(1;91)] and length == 9' <<<"$backward" 2>/dev/null)"
+sorted=$(walk "pageSize=40&sort=-price" after nextCursor)
+expect "feed: sort=-price walks 95..1" "$(jq -s 'add == [range(95;0;-1)]' <<<"$sorted" 2>/dev/null)"
+check "feed: first page has no previous cursor" \
+  '(.items | map(.id)) == [1,2,3] and .hasNextPage and (.hasPreviousPage | not) and .previousCursor == null' "/products/feed?pageSize=3" 200 1
+next=$(curl -s "$URL/products/feed?pageSize=3" | jq -r .nextCursor)
+check "feed: next page via after" '(.items | map(.id)) == [4,5,6] and .hasPreviousPage' "/products/feed?pageSize=3&after=$next" 200 1
+check "feed: a tampered cursor is a 400" '.status == 400 and (.errors | has("after"))' "/products/feed?after=${next}x" 400
+check "feed: a cursor from another sort is a 400" \
+  '.status == 400 and (.detail | test("different sort"))' "/products/feed?after=$next&sort=-price" 400
+check "feed: after and before together is a 400" \
+  '.status == 400 and (.errors | has("before"))' "/products/feed?after=$next&before=$next" 400
+
 if [[ $FAILED == 0 ]]; then echo "All smoke checks passed."; else echo "Some checks failed — app log: samples/sample.log"; exit 1; fi

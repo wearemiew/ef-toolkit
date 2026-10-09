@@ -19,6 +19,7 @@ All notable changes to this project are documented in this file.
 ### Added
 - `PageRequest` and `PagingOptions`: bind `page`/`pageSize`/`sort` from the query string with defaults (page 1, 20 items) and a page-size cap (100); new `ToPagedListAsync(PageRequest[, PagingOptions])` overloads.
 - `SortMap<T>` and `ApplySort`: allow-listed, client-driven sorting (`?sort=-price,name`) with a stable tie-breaker.
+- Cursor (keyset) pagination: `CursorRequest`, `CursorPagedResult<T>` and `ToCursorPagedListAsync(CursorRequest[, PagingOptions])`. Pages read the sort keys from the query's own ordering (so it works with `ApplySort`), go forward (`after`) and backward (`before`), run one parameterized query each, and reject malformed or cross-sort cursors as `InvalidQueryRequestException`.
 - `WhereIf`: apply a filter only when a condition holds.
 - `InvalidQueryRequestException`: thrown only for bad client paging/sorting input, so APIs can map it to a 400 without masking server bugs.
 - Sample app (`samples/`) with a smoke test that exercises the packed package end to end.
